@@ -283,16 +283,27 @@ def checkout_and_reset(branch: str, reason: str = "unspecified",
                 log.error("Failed to create stable branch: %s", repr(e))
                 return False, "Failed to create stable branch"
 
-    # For dev branch, ensure it exists on remote
+    # For dev branch, ensure it exists on remote and locally
     if branch == BRANCH_DEV:
+        # Verify remote has dev branch
         rc_verify_remote = subprocess.run(
             ["git", "ls-remote", "--heads", "origin", BRANCH_DEV],
             cwd=str(REPO_DIR),
             capture_output=True,
         ).returncode
         if rc_verify_remote != 0:
-            log.warning("Dev branch %s not found on remote - pushing from local", BRANCH_DEV)
+            log.warning("Dev branch %s not found on remote - creating and pushing", BRANCH_DEV)
             try:
+                # Check if local dev branch exists
+                rc_local = subprocess.run(
+                    ["git", "rev-parse", "--verify", BRANCH_DEV],
+                    cwd=str(REPO_DIR),
+                    capture_output=True,
+                ).returncode
+                if rc_local != 0:
+                    # Create local dev branch from current HEAD
+                    subprocess.run(["git", "checkout", "-b", BRANCH_DEV], cwd=str(REPO_DIR), check=True)
+                # Push to remote
                 subprocess.run(["git", "push", "-u", "origin", BRANCH_DEV], cwd=str(REPO_DIR), check=True)
                 log.info("Pushed dev branch %s to remote", BRANCH_DEV)
             except Exception as e:
