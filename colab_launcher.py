@@ -48,6 +48,12 @@ from ouroboros.llm import DEFAULT_LIGHT_MODEL
 install_apply_patch()
 
 # ----------------------------
+# 0.2) Add repo to PYTHONPATH
+# ----------------------------
+REPO_DIR = pathlib.Path("/content/ouroboros_repo").resolve()
+sys.path.insert(0, str(REPO_DIR))
+
+# ----------------------------
 # 1) Secrets + runtime config
 # ----------------------------
 from google.colab import userdata  # type: ignore
@@ -256,9 +262,9 @@ try:
 except Exception as e:
     log.error("Failed to restore pending queue - clearing corrupted snapshot", exc_info=True)
     restored_pending = 0
-    # Clear corrupted snapshot by calculating path directly (bypassing state module)
+    # Compute path directly without module dependencies
     queue_snapshot_path = DRIVE_ROOT / "state" / "queue_snapshot.json"
-    if queue_snapshot_path.is_file():
+    if queue_snapshot_path.exists():
         queue_snapshot_path.unlink(missing_ok=True)
 persist_queue_snapshot(reason="startup")
 if restored_pending > 0:
