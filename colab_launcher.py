@@ -161,6 +161,9 @@ if not pathlib.Path("/content/drive/MyDrive").exists():
 DRIVE_ROOT = pathlib.Path("/content/drive/MyDrive/Ouroboros").resolve()
 REPO_DIR = pathlib.Path("/content/ouroboros_repo").resolve()
 
+# Add repo to PYTHONPATH after REPO_DIR is defined
+sys.path.insert(0, str(REPO_DIR))
+
 for sub in ["state", "logs", "memory", "index", "locks", "archive"]:
     (DRIVE_ROOT / sub).mkdir(parents=True, exist_ok=True)
 REPO_DIR.mkdir(parents=True, exist_ok=True)
