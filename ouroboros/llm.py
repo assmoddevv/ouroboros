@@ -1,10 +1,3 @@
-"""
-Ouroboros — LLM client.
-
-The only module that communicates with the LLM API (OpenRouter).
-Contract: chat(), default_model(), available_models(), add_usage().
-"""
-
 from __future__ import annotations
 
 import logging
@@ -14,7 +7,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 log = logging.getLogger(__name__)
 
-DEFAULT_LIGHT_MODEL = "google/gemini-3-pro-preview"
+DEFAULT_LIGHT_MODEL = "liquid/lfm-2.5-1.2b-thinking:free"
 
 
 def normalize_reasoning_effort(value: str, default: str = "medium") -> str:
@@ -231,7 +224,7 @@ class LLMClient:
         self,
         prompt: str,
         images: List[Dict[str, Any]],
-        model: str = "anthropic/claude-sonnet-4.6",
+        model: str = "qwen/qwen3-235b-a22b-thinking-2507:nitro",
         max_tokens: int = 1024,
         reasoning_effort: str = "low",
     ) -> Tuple[str, Dict[str, Any]]:
@@ -280,13 +273,13 @@ class LLMClient:
 
     def default_model(self) -> str:
         """Return the single default model from env. LLM switches via tool if needed."""
-        return os.environ.get("OUROBOROS_MODEL", "anthropic/claude-sonnet-4.6")
+        return os.environ.get("OUROBOROS_MODEL", "qwen/qwen3-235b-a22b-thinking-2507:nitro")
 
     def available_models(self) -> List[str]:
         """Return list of available models from env (for switch_model tool schema)."""
-        main = os.environ.get("OUROBOROS_MODEL", "anthropic/claude-sonnet-4.6")
-        code = os.environ.get("OUROBOROS_MODEL_CODE", "")
-        light = os.environ.get("OUROBOROS_MODEL_LIGHT", "")
+        main = os.environ.get("OUROBOROS_MODEL", "qwen/qwen3-235b-a22b-thinking-2507:nitro")
+        code = os.environ.get("OUROBOROS_MODEL_CODE", "nvidia/nemotron-3-nano-30b-a3b:free")
+        light = os.environ.get("OUROBOROS_MODEL_LIGHT", "liquid/lfm-2.5-1.2b-thinking:free")
         models = [main]
         if code and code != main:
             models.append(code)
