@@ -94,7 +94,6 @@ def fetch_openrouter_pricing() -> Dict[str, Tuple[float, float, float]]:
         log.warning(f"Failed to fetch OpenRouter pricing: {e}")
         return {}
 
-
 class LLMClient:
     """OpenRouter API wrapper. All LLM calls go through this class."""
 
@@ -224,7 +223,7 @@ class LLMClient:
         self,
         prompt: str,
         images: List[Dict[str, Any]],
-        model: str = "qwen/qwen3-235b-a22b-thinking-2507:nitro",
+        model: str = "qwen/qwen3-235b-a22b-thinking-2507",
         max_tokens: int = 1024,
         reasoning_effort: str = "low",
     ) -> Tuple[str, Dict[str, Any]]:
@@ -273,11 +272,11 @@ class LLMClient:
 
     def default_model(self) -> str:
         """Return the single default model from env. LLM switches via tool if needed."""
-        return os.environ.get("OUROBOROS_MODEL", "qwen/qwen3-235b-a22b-thinking-2507:nitro")
+        return os.environ.get("OUROBOROS_MODEL", "qwen/qwen3-235b-a22b-thinking-2507")
 
     def available_models(self) -> List[str]:
         """Return list of available models from env (for switch_model tool schema)."""
-        main = os.environ.get("OUROBOROS_MODEL", "qwen/qwen3-235b-a22b-thinking-2507:nitro")
+        main = os.environ.get("OUROBOROS_MODEL", "qwen/qwen3-235b-a22b-thinking-2507")
         code = os.environ.get("OUROBOROS_MODEL_CODE", "nvidia/nemotron-3-nano-30b-a3b:free")
         light = os.environ.get("OUROBOROS_MODEL_LIGHT", "liquid/lfm-2.5-1.2b-thinking:free")
         models = [main]
