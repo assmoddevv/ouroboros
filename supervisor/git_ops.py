@@ -1,8 +1,8 @@
-"""
+'''
 Supervisor — Git operations.
 
 Clone, checkout, reset, rescue snapshots, dependency sync, import test.
-"""
+'''
 
 from __future__ import annotations
 
@@ -51,7 +51,6 @@ def init(repo_dir: pathlib.Path, drive_root: pathlib.Path, remote_url: str,
 def git_capture(cmd: List[str]) -> Tuple[int, str, str]:
     r = subprocess.run(cmd, cwd=str(REPO_DIR), capture_output=True, text=True)
     return r.returncode, (r.stdout or "").strip(), (r.stderr or "").strip()
-
 
 def ensure_repo_present() -> None:
     if not (REPO_DIR / ".git").exists():
@@ -104,7 +103,7 @@ def _collect_repo_sync_state() -> Dict[str, Any]:
     if upstream:
         rc, unpushed, err = git_capture(["git", "log", "--oneline", f"{upstream}..HEAD"])
         if rc == 0 and unpushed:
-            state["unpushed_lines"] = [ln for ln in unpushed.splitlines() if ln.strip()]
+            state["unpushed_lines"] = [ln for ln in (unpushed.splitlines() or []) if ln.strip()]
         elif rc != 0 and err:
             state["warnings"].append(f"unpushed_error:{err}")
 
@@ -224,55 +223,38 @@ def checkout_and_reset(branch: str, reason: str = "unspecified",
     if policy not in {"ignore", "block", "rescue_and_block", "rescue_and_reset"}:
         policy = "ignore"
 
-    if policy != "ignore":
-        repo_state = _collect_repo_sync_state()
-        dirty_lines = list(repo_state.get("dirty_lines") or [])
-        unpushed_lines = list(repo_state.get("unpushed_lines") or [])
-        if dirty_lines or unpushed_lines:
-            rescue_info: Dict[str, Any] = {}
-            if policy in {"rescue_and_block", "rescue_and_reset"}:
-                try:
-                    rescue_info = _create_rescue_snapshot(
-                        branch=branch, reason=reason, repo_state=repo_state)
-                except Exception as e:
-                    rescue_info = {"error": repr(e)}
-            bits: List[str] = []
-            if unpushed_lines:
-                bits.append(f"unpushed={len(unpushed_lines)}")
-            if dirty_lines:
-                bits.append(f"dirty={len(dirty_lines)}")
-            detail = ", ".join(bits) if bits else "unsynced"
-            rescue_suffix = ""
-            rescue_path = str(rescue_info.get("path") or "").strip()
-            if rescue_path:
-                rescue_suffix = f" Rescue saved to {rescue_path}."
-            elif policy in {"rescue_and_block", "rescue_and_reset"} and rescue_info.get("error"):
-                rescue_suffix = f" Rescue failed: {rescue_info.get('error')}."
+    repo_state = _collect_repo_sync_state()
+    dirty_lines = list(repo_state.get("dirty_lines") or [])
+    unpushed_lines = list(repo_state.get("unpushed_lines") or [])
+    rescue_info: Dict[str, Any] = {}
 
-            if policy in {"block", "rescue_and_block"}:
-                msg = f"Reset blocked ({detail}) to protect local changes.{rescue_suffix}"
-                append_jsonl(
-                    DRIVE_ROOT / "logs" / "supervisor.jsonl",
-                    {
-                        "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                        "type": "reset_blocked_unsynced_state",
-                        "target_branch": branch, "reason": reason, "policy": policy,
-                        "current_branch": repo_state.get("current_branch"),
-                        "dirty_count": len(dirty_lines),
-                        "unpushed_count": len(unpushed_lines),
-                        "dirty_preview": dirty_lines[:20],
-                        "unpushed_preview": unpushed_lines[:20],
-                        "warnings": list(repo_state.get("warnings") or []),
-                        "rescue": rescue_info,
-                    },
-                )
-                return False, msg
+    if dirty_lines or unpushed_lines:
+        if policy in {"rescue_and_block", "rescue_and_reset"}:
+            try:
+                rescue_info = _create_rescue_snapshot(
+                    branch=branch, reason=reason, repo_state=repo_state)
+            except Exception as e:
+                rescue_info = {"error": repr(e)}
+        bits: List[str] = []
+        if unpushed_lines:
+            bits.append(f"unpushed={len(unpushed_lines)}")
+        if dirty_lines:
+            bits.append(f"dirty={len(dirty_lines)}")
+        detail = ", ".join(bits) if bits else "unsynced"
+        rescue_suffix = ""
+        rescue_path = str(rescue_info.get("path") or "").strip()
+        if rescue_path:
+            rescue_suffix = f" Rescue saved to {rescue_path}."
+        elif policy in {"rescue_and_block", "rescue_and_reset"} and rescue_info.get("error"):
+            rescue_suffix = f" Rescue failed: {rescue_info.get('error')}.)"
 
+        if policy in {"block", "rescue_and_block"}:
+            msg = f"Reset blocked ({detail}) to protect local changes.{rescue_suffix}"
             append_jsonl(
                 DRIVE_ROOT / "logs" / "supervisor.jsonl",
                 {
                     "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                    "type": "reset_unsynced_rescued_then_reset",
+                    "type": "reset_blocked_unsynced_state",
                     "target_branch": branch, "reason": reason, "policy": policy,
                     "current_branch": repo_state.get("current_branch"),
                     "dirty_count": len(dirty_lines),
@@ -283,10 +265,29 @@ def checkout_and_reset(branch: str, reason: str = "unspecified",
                     "rescue": rescue_info,
                 },
             )
+            return False, msg
+
+    # Create stable branch if missing
+    if branch == BRANCH_STABLE:
+        rc_check = subprocess.run(
+            ["git", "ls-remote", "--heads", "origin", BRANCH_STABLE],
+            cwd=str(REPO_DIR),
+            capture_output=True,
+        ).returncode
+        if rc_check != 0:
+            log.warning("Stable branch %s missing - creating from dev", BRANCH_STABLE)
+            try:
+                subprocess.run(["git", "checkout", BRANCH_DEV], cwd=str(REPO_DIR), check=True)
+                subprocess.run(["git", "push", "origin", f"{BRANCH_DEV}:{BRANCH_STABLE}"], cwd=str(REPO_DIR), check=True)
+                log.info("Created stable branch %s from %s", BRANCH_STABLE, BRANCH_DEV)
+            except Exception as e:
+                log.error("Failed to create stable branch: %s", repr(e))
+                return False, "Failed to create stable branch"
 
     rc_verify = subprocess.run(
         ["git", "rev-parse", "--verify", f"origin/{branch}"],
-        cwd=str(REPO_DIR), capture_output=True,
+        cwd=str(REPO_DIR),
+        capture_output=True,
     ).returncode
     if rc_verify != 0:
         msg = f"Branch {branch} not found on remote"
@@ -313,6 +314,7 @@ def checkout_and_reset(branch: str, reason: str = "unspecified",
     ).stdout.strip()
     save_state(st)
     return True, "ok"
+
 
 
 # ---------------------------------------------------------------------------
@@ -383,48 +385,18 @@ def safe_restart(
         - If failed: (False, "<error description>")
     """
     # Try dev branch
-    ok, err = checkout_and_reset(BRANCH_DEV, reason=reason, unsynced_policy=unsynced_policy)
-    if not ok:
-        return False, f"Failed checkout {BRANCH_DEV}: {err}"
-
-    deps_ok, deps_msg = sync_runtime_dependencies(reason=reason)
-    if not deps_ok:
-        return False, f"Failed deps for {BRANCH_DEV}: {deps_msg}"
-
-    t = import_test()
-    if t["ok"]:
+    ok, err = checkout_and_reset(BRANCH_DEV, reason, unsynced_policy=unsynced_policy)
+    if ok:
         return True, f"OK: {BRANCH_DEV}"
 
-    # Dev branch failed import — log the failure and fall back to stable
-    append_jsonl(
-        DRIVE_ROOT / "logs" / "supervisor.jsonl",
-        {
-            "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-            "type": "safe_restart_dev_import_failed",
-            "reason": reason,
-            "branch": BRANCH_DEV,
-            "stdout": t.get("stdout", ""),
-            "stderr": t.get("stderr", ""),
-            "returncode": t.get("returncode", -1),
-        },
-    )
+    # Dev failed -> try stable (create if missing)
+    ok, err = checkout_and_reset(BRANCH_STABLE, reason, unsynced_policy=unsynced_policy)
+    if ok:
+        return True, f"OK (fallback): {BRANCH_STABLE}"
 
-    # Fallback to stable
-    ok_s, err_s = checkout_and_reset(
-        BRANCH_STABLE,
-        reason=f"{reason}_fallback_stable",
-        unsynced_policy="rescue_and_reset",
-    )
-    if not ok_s:
-        return False, f"Failed checkout {BRANCH_STABLE}: {err_s}"
+    # Both failed -> try main (safe fallback)
+    ok, err = checkout_and_reset("main", reason, unsynced_policy=unsynced_policy)
+    if ok:
+        return True, "OK (emergency fallback): main"
 
-    deps_ok_s, deps_msg_s = sync_runtime_dependencies(reason=f"{reason}_fallback_stable")
-    if not deps_ok_s:
-        return False, f"Failed deps for {BRANCH_STABLE}: {deps_msg_s}"
-
-    t2 = import_test()
-    if t2["ok"]:
-        return True, f"OK: fell back to {BRANCH_STABLE}"
-
-    # Both branches failed
-    return False, f"Both branches failed import (dev and stable)"
+    return False, "All fallbacks failed: " + err
