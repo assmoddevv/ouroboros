@@ -1,7 +1,7 @@
-"""Supervisor — Git operations.
+'''Supervisor — Git operations.
 
 Clone, checkout, reset, rescue snapshots, dependency sync, import test.
-"""
+'''
 
 from __future__ import annotations
 
@@ -386,7 +386,7 @@ def safe_restart(
     reason: str,
     unsynced_policy: str = "rescue_and_reset",
 ) -> Tuple[bool, str]:
-    """
+    '''
     Attempt to checkout dev branch, sync deps, and verify imports.
     Falls back to stable branch if dev fails.
 
@@ -398,7 +398,7 @@ def safe_restart(
         Tuple of (ok: bool, message: str)
         - If successful: (True, "OK: <branch>")
         - If failed: (False, "<error description>")
-    """
+    '''
     # Try dev branch
     ok, err = checkout_and_reset(BRANCH_DEV, reason, unsynced_policy=unsynced_policy)
     if ok:
