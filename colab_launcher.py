@@ -13,13 +13,16 @@ log = logging.getLogger(__name__)
 # ----------------------------
 # 0) Install launcher deps
 # ----------------------------
-def install_launcher_deps() -> None:
-    subprocess.run(
-        [sys.executable, "-m", "pip", "install", "-q", "openai>=1.0.0", "requests"],
-        check=True,
-    )
-
-install_launcher_deps()
+try:
+    import openai
+    import requests
+except ImportError:
+    def install_launcher_deps() -> None:
+        subprocess.run(
+            [sys.executable, "-m", "pip", "install", "-q", "openai>=1.0.0", "requests"],
+            check=True,
+        )
+    install_launcher_deps()
 
 def ensure_claude_code_cli() -> bool:
     """Best-effort install of Claude Code CLI for Anthropic-powered code edits."""
@@ -46,12 +49,6 @@ def ensure_claude_code_cli() -> bool:
 from ouroboros.apply_patch import install as install_apply_patch
 from ouroboros.llm import DEFAULT_LIGHT_MODEL
 install_apply_patch()
-
-# ----------------------------
-# 0.2) Add repo to PYTHONPATH
-# ----------------------------
-REPO_DIR = pathlib.Path("/content/ouroboros_repo").resolve()
-sys.path.insert(0, str(REPO_DIR))
 
 # ----------------------------
 # 1) Secrets + runtime config
@@ -262,7 +259,6 @@ try:
 except Exception as e:
     log.error("Failed to restore pending queue - clearing corrupted snapshot", exc_info=True)
     restored_pending = 0
-    # Compute path directly without module dependencies
     queue_snapshot_path = DRIVE_ROOT / "state" / "queue_snapshot.json"
     if queue_snapshot_path.exists():
         queue_snapshot_path.unlink(missing_ok=True)
