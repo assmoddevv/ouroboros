@@ -256,9 +256,11 @@ try:
 except Exception as e:
     log.error("Failed to restore pending queue - clearing corrupted snapshot", exc_info=True)
     restored_pending = 0
-    # Clear corrupted snapshot
+    # Clear corrupted snapshot (CORRECTED IMPORT FROM state, not queue)
+    from supervisor.state import QUEUE_SNAPSHOT_PATH
     from pathlib import Path
-    Path(supervisor.queue.QUEUE_SNAPSHOT_PATH).unlink(missing_ok=True)
+    if QUEUE_SNAPSHOT_PATH.exists():
+        QUEUE_SNAPSHOT_PATH.unlink()
 persist_queue_snapshot(reason="startup")
 if restored_pending > 0:
     st_boot = load_state()
