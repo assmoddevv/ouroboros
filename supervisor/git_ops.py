@@ -69,7 +69,7 @@ def checkout_and_reset(branch: str) -> Tuple[bool, str]:
     code, _, err = _git('reset', '--hard', f"origin/{branch}", cwd=REPO_DIR, check=False)
     if code != 0:
         # If origin doesn't have branch yet (first push), just do soft reset
-n        code, _, err = _git('reset', '--soft', 'HEAD', cwd=REPO_DIR, check=False)
+        code, _, err = _git('reset', '--soft', 'HEAD', cwd=REPO_DIR, check=False)
         if code != 0:
             return False, f"Reset failed: {err.strip()[:200]}"
 
