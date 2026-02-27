@@ -264,7 +264,7 @@ except Exception as e:
     log.error("Failed to restore pending queue - clearing corrupted snapshot", exc_info=True)
     restored_pending = 0
     queue_snapshot_path = DRIVE_ROOT / "state" / "queue_snapshot.json"
-    if queue_snapshot_path.exists():
+    if queue_snapshot_path.is_file():
         queue_snapshot_path.unlink(missing_ok=True)
 persist_queue_snapshot(reason="startup")
 if restored_pending > 0:
