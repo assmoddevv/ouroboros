@@ -9,11 +9,6 @@ log = logging.getLogger(__name__)
 BRANCH_DEV = "ouroboros"
 BRANCH_STABLE = "ouroboros-stable"
 
-# Absolute imports to resolve test failures
-from supervisor.state import load_state, save_state
-from supervisor.queue import persist_queue_snapshot
-from supervisor.workers import kill_workers, spawn_workers
-
 REPO_DIR: Optional[Path] = None
 DRIVE_ROOT: Optional[Path] = None
 REMOTE_URL: Optional[str] = None
@@ -74,7 +69,7 @@ def checkout_and_reset(branch: str) -> Tuple[bool, str]:
     code, _, err = _git('reset', '--hard', f"origin/{branch}", cwd=REPO_DIR, check=False)
     if code != 0:
         # If origin doesn't have branch yet (first push), just do soft reset
-        code, _, err = _git('reset', '--soft', 'HEAD', cwd=REPO_DIR, check=False)
+n        code, _, err = _git('reset', '--soft', 'HEAD', cwd=REPO_DIR, check=False)
         if code != 0:
             return False, f"Reset failed: {err.strip()[:200]}"
 
@@ -84,7 +79,13 @@ def checkout_and_reset(branch: str) -> Tuple[bool, str]:
 def sync_runtime_dependencies() -> None:
     """Make sure worker processes use latest code for queue snapshot handling."""
     assert DRIVE_ROOT, "git_ops not initialized"
+    
+    # Late import to avoid circular dependency
+    from supervisor.queue import persist_queue_snapshot
     persist_queue_snapshot(reason="pre-sync")
+    
+    # Late import to avoid circular dependency
+    from supervisor.workers import kill_workers, spawn_workers
     kill_workers()
     spawn_workers(1)  # Just enough to handle state
 
@@ -97,9 +98,14 @@ def safe_restart(reason: str, unsynced_policy: str = "rescue") -> Tuple[bool, st
         'reset'  - hard reset to origin (lose local changes)
     """
     assert REPO_DIR and DRIVE_ROOT, "git_ops not initialized"
+    current_branch = None
+    
+    # Late imports to avoid circular dependency
+    from supervisor.state import load_state, save_state
     current_branch = load_state().get('current_branch', BRANCH_DEV)
 
     # Pre-restart cleanup
+    from supervisor.queue import persist_queue_snapshot
     persist_queue_snapshot(reason="pre-restart")
 
     # Try normal checkout
