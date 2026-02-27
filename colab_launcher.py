@@ -158,10 +158,11 @@ if str(ANTHROPIC_API_KEY or "").strip():
 if not pathlib.Path("/content/drive/MyDrive").exists():
     drive.mount("/content/drive")
 
+# Compute repo directory dynamically from current script location
+REPO_DIR = pathlib.Path(__file__).parent.resolve()
 DRIVE_ROOT = pathlib.Path("/content/drive/MyDrive/Ouroboros").resolve()
-REPO_DIR = pathlib.Path("/content/ouroboros_repo").resolve()
 
-# Add repo to PYTHONPATH after REPO_DIR is defined
+# Add repo to PYTHONPATH (before any supervisor imports)
 sys.path.insert(0, str(REPO_DIR))
 
 for sub in ["state", "logs", "memory", "index", "locks", "archive"]:
