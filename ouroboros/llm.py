@@ -7,11 +7,12 @@ Contract: chat(), default_model(), available_models(), add_usage().
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import re
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 log = logging.getLogger(__name__)
 
@@ -111,24 +112,32 @@ class LLMClient:
         api_key: Optional[str] = None,
         base_url: str = "https://openrouter.ai/api/v1",
     ):
+        self._api_key_override = api_key
         self._api_key = api_key or os.environ.get("OPENROUTER_API_KEY", "")
         self._base_url = base_url
         self._client = None
+        self._client_api_key: Optional[str] = None
         self._local_client = None
         self._local_port: Optional[int] = None
 
     def _get_client(self):
-        if self._client is None:
+        current_api_key = self._api_key_override
+        if current_api_key is None:
+            current_api_key = os.environ.get("OPENROUTER_API_KEY", "")
+
+        if self._client is None or self._client_api_key != current_api_key:
             from openai import OpenAI
             self._client = OpenAI(
                 base_url=self._base_url,
-                api_key=self._api_key,
+                api_key=current_api_key,
                 max_retries=0,
                 default_headers={
                     "HTTP-Referer": "https://ouroboros.local/",
                     "X-Title": "Ouroboros",
                 },
             )
+            self._client_api_key = current_api_key
+            self._api_key = current_api_key
         return self._client
 
     def _get_local_client(self):
@@ -273,8 +282,81 @@ class LLMClient:
         choices = resp_dict.get("choices") or [{}]
         msg = (choices[0] if choices else {}).get("message") or {}
 
+        if not msg.get("tool_calls") and msg.get("content") and clean_tools:
+            allowed_tool_names = {
+                str(t.get("function", {}).get("name", "")).strip()
+                for t in clean_tools
+                if isinstance(t, dict)
+            }
+            msg = self._parse_tool_calls_from_content(msg, allowed_tool_names)
+
         usage["cost"] = 0.0
         return msg, usage
+
+    @staticmethod
+    def _parse_tool_calls_from_content(
+        msg: Dict[str, Any],
+        allowed_tool_names: Optional[Set[str]] = None,
+    ) -> Dict[str, Any]:
+        """Parse <tool_call> XML tags from content into structured tool_calls.
+
+        Works around llama-cpp-python not parsing Qwen/Hermes-style tool calls
+        (https://github.com/abetlen/llama-cpp-python/issues/1784).
+        """
+        content = str(msg.get("content", "") or "")
+        stripped = content.strip()
+        if not stripped:
+            return msg
+
+        # Safety: only upgrade the response when it consists solely of
+        # one or more <tool_call> blocks. If the model mixed prose with
+        # examples or explanations, leave it as plain text.
+        full_pattern = re.compile(
+            r"^(?:\s*<tool_call>\s*\{.*?\}\s*</tool_call>\s*)+$",
+            re.DOTALL,
+        )
+        if not full_pattern.fullmatch(stripped):
+            return msg
+
+        matches = re.findall(r"<tool_call>\s*(\{.*?\})\s*</tool_call>", stripped, re.DOTALL)
+        if not matches:
+            return msg
+
+        allowed = {name for name in (allowed_tool_names or set()) if name}
+        tool_calls = []
+        for i, raw in enumerate(matches):
+            try:
+                obj = json.loads(raw)
+                if not isinstance(obj, dict):
+                    raise ValueError("tool_call payload must be an object")
+                name = str(obj.get("name", "")).strip()
+                args = obj.get("arguments", {})
+                if not name:
+                    raise ValueError("tool_call missing function name")
+                if allowed and name not in allowed:
+                    raise ValueError(f"unknown tool '{name}'")
+                if not isinstance(args, dict):
+                    raise ValueError("tool_call arguments must be an object")
+                tool_calls.append({
+                    "id": f"call_local_{i}",
+                    "type": "function",
+                    "function": {
+                        "name": name,
+                        "arguments": json.dumps(args),
+                    },
+                })
+            except (json.JSONDecodeError, ValueError) as exc:
+                log.warning("Rejected local <tool_call> block: %s (%s)", raw[:200], exc)
+                return msg
+
+        if not tool_calls:
+            return msg
+
+        msg = dict(msg)
+        msg["tool_calls"] = tool_calls
+        msg["content"] = None
+        log.info("Parsed %d local tool call(s) from text output", len(tool_calls))
+        return msg
 
     @staticmethod
     def _truncate_messages_for_context(

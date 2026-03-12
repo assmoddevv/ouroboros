@@ -427,7 +427,19 @@ class LocalModelManager:
                 max_tokens=256,
             )
             msg = resp.choices[0].message if resp.choices else None
-            if msg and msg.tool_calls:
+            tool_calls = list(getattr(msg, "tool_calls", None) or []) if msg else []
+            if msg and not tool_calls and getattr(msg, "content", None):
+                from ouroboros.llm import LLMClient
+
+                parsed = LLMClient._parse_tool_calls_from_content(
+                    {
+                        "content": msg.content,
+                        "tool_calls": [],
+                    },
+                    {"get_time"},
+                )
+                tool_calls = parsed.get("tool_calls") or []
+            if tool_calls:
                 result["tool_call_ok"] = True
             else:
                 result["details"] = "Model returned text instead of tool_call"
