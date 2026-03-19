@@ -15,7 +15,7 @@ import threading
 import time
 from typing import Any, Callable, Dict, Optional
 
-from ouroboros.compat import IS_MACOS, terminate_process_tree, kill_process_tree
+from ouroboros.compat import IS_MACOS, IS_WINDOWS, terminate_process_tree, kill_process_tree
 
 log = logging.getLogger(__name__)
 
@@ -178,10 +178,56 @@ class LocalModelManager:
             return -1, None
         return -1, device
 
+    @staticmethod
+    def _build_gpu_overlay_env(env: dict, gpu_device: str) -> dict:
+        """Prepend NVIDIA GPU backend overlay to env for subprocess."""
+        from ouroboros.config import GPU_BACKEND_DIR
+
+        sp = str(GPU_BACKEND_DIR / "site-packages")
+        if not os.path.isdir(sp):
+            raise RuntimeError(
+                "NVIDIA GPU packages are not installed. "
+                "Go to Settings and click 'Install GPU Packages'."
+            )
+
+        existing_pp = env.get("PYTHONPATH", "")
+        env["PYTHONPATH"] = sp + (os.pathsep + existing_pp if existing_pp else "")
+
+        if IS_WINDOWS:
+            lib_dirs = []
+            llama_lib = os.path.join(sp, "llama_cpp", "lib")
+            if os.path.isdir(llama_lib):
+                lib_dirs.append(llama_lib)
+            nvidia_root = os.path.join(sp, "nvidia")
+            if os.path.isdir(nvidia_root):
+                for pkg in sorted(os.listdir(nvidia_root)):
+                    for sub in ("bin", "lib"):
+                        d = os.path.join(nvidia_root, pkg, sub)
+                        if os.path.isdir(d):
+                            lib_dirs.append(d)
+            if lib_dirs:
+                env["PATH"] = os.pathsep.join(lib_dirs) + os.pathsep + env.get("PATH", "")
+        else:
+            lib_dirs = []
+            llama_lib = os.path.join(sp, "llama_cpp", "lib")
+            if os.path.isdir(llama_lib):
+                lib_dirs.append(llama_lib)
+            nvidia_root = os.path.join(sp, "nvidia")
+            if os.path.isdir(nvidia_root):
+                for pkg in sorted(os.listdir(nvidia_root)):
+                    d = os.path.join(nvidia_root, pkg, "lib")
+                    if os.path.isdir(d):
+                        lib_dirs.append(d)
+            if lib_dirs:
+                existing_ld = env.get("LD_LIBRARY_PATH", "")
+                env["LD_LIBRARY_PATH"] = os.pathsep.join(lib_dirs) + (os.pathsep + existing_ld if existing_ld else "")
+        return env
+
     def start_server(
         self,
         model_path: str,
         port: int = _LOCAL_MODEL_DEFAULT_PORT,
+        backend: str = "cpu",
         gpu_device: str = "auto",
         n_ctx: int = 0,
         chat_format: str = "",
@@ -199,22 +245,11 @@ class LocalModelManager:
             n_gpu_layers, cuda_device = self._resolve_gpu_device(gpu_device)
 
             python = sys.executable
-
-            # Build env for subprocesses (probe + server)
             env = os.environ.copy()
+            if backend == "nvidia_cuda":
+                env = self._build_gpu_overlay_env(env, gpu_device)
             if cuda_device is not None:
                 env["CUDA_VISIBLE_DEVICES"] = cuda_device
-            if sys.platform == "win32":
-                # CUDA wheels bundle DLLs in llama_cpp/lib/ but Windows
-                # doesn't search there automatically — add to PATH.
-                python_dir = os.path.dirname(python)
-                for subdir in ("lib", "Lib"):
-                    lib_dir = os.path.join(
-                        python_dir, subdir, "site-packages", "llama_cpp", "lib",
-                    )
-                    if os.path.isdir(lib_dir):
-                        env["PATH"] = lib_dir + os.pathsep + env.get("PATH", "")
-                        break
 
             cmd = [
                 python, "-m", "llama_cpp.server",

@@ -25,6 +25,7 @@ HOME = pathlib.Path.home()
 APP_ROOT = HOME / "Ouroboros"
 REPO_DIR = APP_ROOT / "repo"
 DATA_DIR = APP_ROOT / "data"
+GPU_BACKEND_DIR = DATA_DIR / "backends" / "nvidia-cu124"
 SETTINGS_PATH = DATA_DIR / "settings.json"
 PID_FILE = APP_ROOT / "ouroboros.pid"
 PORT_FILE = DATA_DIR / "state" / "server_port"
@@ -69,6 +70,7 @@ SETTINGS_DEFAULTS = {
     "GITHUB_TOKEN": "",
     "GITHUB_REPO": "",
     # Local model (llama-cpp-python server)
+    "LOCAL_MODEL_BACKEND": "cpu",
     "LOCAL_MODEL_SOURCE": "",
     "LOCAL_MODEL_FILENAME": "",
     "LOCAL_MODEL_PORT": 8766,
@@ -214,7 +216,7 @@ def apply_settings_to_env(settings: dict) -> None:
         "OUROBOROS_REVIEW_MODELS", "OUROBOROS_REVIEW_ENFORCEMENT",
         "OUROBOROS_EFFORT_TASK", "OUROBOROS_EFFORT_EVOLUTION",
         "OUROBOROS_EFFORT_REVIEW", "OUROBOROS_EFFORT_CONSCIOUSNESS",
-        "LOCAL_MODEL_SOURCE", "LOCAL_MODEL_FILENAME",
+        "LOCAL_MODEL_BACKEND", "LOCAL_MODEL_SOURCE", "LOCAL_MODEL_FILENAME",
         "LOCAL_MODEL_PORT", "LOCAL_MODEL_GPU_DEVICE", "LOCAL_MODEL_CONTEXT_LENGTH",
         "LOCAL_MODEL_CHAT_FORMAT",
         "USE_LOCAL_MAIN", "USE_LOCAL_CODE", "USE_LOCAL_LIGHT", "USE_LOCAL_FALLBACK",

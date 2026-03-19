@@ -50,7 +50,7 @@ Most AI agents execute tasks. Ouroboros **creates itself.**
 - **Background Consciousness** — Thinks between tasks. Has an inner life. Not reactive — proactive.
 - **Identity Persistence** — One continuous being across restarts. Remembers who it is, what it has done, and what it is becoming.
 - **Embedded Version Control** — Contains its own local Git repo. Version controls its own evolution. Optional GitHub sync for remote backup.
-- **Local Model Support** — Run with a local GGUF model via llama-cpp-python (Metal acceleration on Apple Silicon, CPU on Linux/Windows).
+- **Local Model Support** — Run with a local GGUF model via llama-cpp-python (Metal on Apple Silicon, CPU on Windows/Linux, optional NVIDIA GPU acceleration).
 
 ---
 
@@ -115,6 +115,59 @@ Output: `dist/Ouroboros-linux-x86_64.tar.gz`
 ```
 
 Output: `dist\Ouroboros-windows-x64.zip`
+
+---
+
+## Local Models
+
+Ouroboros supports local GGUF models via `llama-cpp-python`.
+
+### What works out of the box
+
+| Platform | Bundled backend |
+|----------|----------------|
+| macOS    | Metal (Apple GPU) |
+| Windows  | CPU |
+| Linux    | CPU |
+
+Cloud models via OpenRouter always work regardless of local model setup.
+
+### Optional: NVIDIA GPU acceleration (Windows / Linux)
+
+Windows and Linux builds ship with CPU-only local inference. NVIDIA GPU acceleration can be installed from the Settings page:
+
+1. Open **Settings** → **Local Model** section.
+2. Set **Backend** to `NVIDIA CUDA`.
+3. Click **Install GPU Packages** and wait for the download to finish.
+4. Set **GPU Device** to `auto` (or `0`, `1`, `0,1` for specific GPUs).
+5. Start the local model.
+
+**Requirements:**
+- NVIDIA GPU with compatible drivers installed
+- ~1 GB additional disk space for GPU runtime packages
+
+GPU packages are stored in `~/Ouroboros/data/backends/nvidia-cu124/` and can be removed or reinstalled from Settings at any time. Removing them does not affect CPU or cloud usage.
+
+#### Manual GPU install (advanced)
+
+Windows:
+```powershell
+python-standalone\python.exe -m pip install --target "%USERPROFILE%\Ouroboros\data\backends\nvidia-cu124\site-packages" --prefer-binary --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cu124 "llama-cpp-python[server]" "nvidia-cuda-runtime-cu12==12.4.127" "nvidia-cublas-cu12==12.4.5.8"
+```
+
+Linux:
+```bash
+python-standalone/bin/python3 -m pip install --target "$HOME/Ouroboros/data/backends/nvidia-cu124/site-packages" --prefer-binary --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cu124 "llama-cpp-python[server]" "nvidia-cuda-runtime-cu12==12.4.127" "nvidia-cublas-cu12==12.4.5.8"
+```
+
+### Troubleshooting
+
+| Problem | Solution |
+|---------|----------|
+| GPU packages installed but model fails to start | Check that NVIDIA drivers are installed and up to date |
+| "Failed to load shared library" on Windows | Reinstall GPU packages from Settings; ensure NVIDIA driver supports CUDA 12.4 |
+| Model runs but is slow | Verify GPU Device is not set to `cpu`; check that the model fits in VRAM |
+| Want to go back to CPU | Set Backend to `CPU (bundled)` in Settings |
 
 ---
 

@@ -25,9 +25,21 @@ export function initSettings({ ws, state }) {
                 </div>
                 <div class="form-row">
                     <div class="form-field"><label>Port</label><input id="s-local-port" type="number" value="8766" style="width:100px"></div>
-                    <div class="form-field"><label>GPU Device</label><input id="s-local-gpu-device" value="auto" placeholder="auto / cpu / 0 / 0,1 / metal" style="width:160px"></div>
+                    <div class="form-field">
+                        <label>Backend</label>
+                        <select id="s-local-backend" style="width:180px">
+                            <option value="cpu">CPU (bundled)</option>
+                            <option value="nvidia_cuda">NVIDIA CUDA</option>
+                        </select>
+                    </div>
+                    <div class="form-field" id="gpu-device-field"><label>GPU Device</label><input id="s-local-gpu-device" value="auto" placeholder="auto / 0 / 0,1" style="width:120px"></div>
                     <div class="form-field"><label>Context Length</label><input id="s-local-ctx" type="number" value="16384" style="width:120px" placeholder="16384"></div>
                     <div class="form-field"><label>Chat Format</label><input id="s-local-chat-format" value="" placeholder="auto-detect" style="width:200px"></div>
+                </div>
+                <div id="gpu-backend-row" style="margin:8px 0;display:none">
+                    <span id="gpu-backend-status" style="font-size:12px;color:var(--text-secondary)"></span>
+                    <button class="btn btn-primary" id="btn-gpu-install" style="margin-left:8px;font-size:12px;padding:4px 12px">Install GPU Packages</button>
+                    <button class="btn btn-danger" id="btn-gpu-remove" style="margin-left:4px;font-size:12px;padding:4px 12px;display:none">Remove</button>
                 </div>
                 <div class="form-row" style="align-items:center;gap:8px">
                     <button class="btn btn-primary" id="btn-local-start">Start</button>
@@ -197,6 +209,7 @@ export function initSettings({ ws, state }) {
         if (s.LOCAL_MODEL_SOURCE) document.getElementById('s-local-source').value = s.LOCAL_MODEL_SOURCE;
         if (s.LOCAL_MODEL_FILENAME) document.getElementById('s-local-filename').value = s.LOCAL_MODEL_FILENAME;
         if (s.LOCAL_MODEL_PORT) document.getElementById('s-local-port').value = s.LOCAL_MODEL_PORT;
+        if (s.LOCAL_MODEL_BACKEND) document.getElementById('s-local-backend').value = s.LOCAL_MODEL_BACKEND;
         if (s.LOCAL_MODEL_GPU_DEVICE) document.getElementById('s-local-gpu-device').value = s.LOCAL_MODEL_GPU_DEVICE;
         if (s.LOCAL_MODEL_CONTEXT_LENGTH) document.getElementById('s-local-ctx').value = s.LOCAL_MODEL_CONTEXT_LENGTH;
         if (s.LOCAL_MODEL_CHAT_FORMAT) document.getElementById('s-local-chat-format').value = s.LOCAL_MODEL_CHAT_FORMAT;
@@ -214,6 +227,69 @@ export function initSettings({ ws, state }) {
     }
 
     loadSettings().catch(() => {});
+
+    // ── GPU backend UI ──────────────────────────────────────────────
+    function updateBackendUI() {
+        const backend = document.getElementById('s-local-backend').value;
+        const isGpu = backend === 'nvidia_cuda';
+        document.getElementById('gpu-device-field').style.display = isGpu ? '' : 'none';
+        document.getElementById('gpu-backend-row').style.display = isGpu ? '' : 'none';
+        if (isGpu) refreshGpuStatus();
+    }
+
+    function refreshGpuStatus() {
+        fetch('/api/local-model/gpu-status').then(r => r.json()).then(d => {
+            const statusEl = document.getElementById('gpu-backend-status');
+            const installBtn = document.getElementById('btn-gpu-install');
+            const removeBtn = document.getElementById('btn-gpu-remove');
+            if (d.installed) {
+                statusEl.textContent = 'GPU packages installed';
+                statusEl.style.color = 'var(--green)';
+                installBtn.textContent = 'Reinstall';
+                removeBtn.style.display = '';
+            } else {
+                statusEl.textContent = 'GPU packages not installed';
+                statusEl.style.color = 'var(--text-secondary)';
+                installBtn.textContent = 'Install GPU Packages';
+                removeBtn.style.display = 'none';
+            }
+        }).catch(() => {});
+    }
+
+    document.getElementById('s-local-backend').addEventListener('change', updateBackendUI);
+    setTimeout(updateBackendUI, 100);
+
+    document.getElementById('btn-gpu-install').addEventListener('click', async () => {
+        const btn = document.getElementById('btn-gpu-install');
+        const statusEl = document.getElementById('gpu-backend-status');
+        btn.disabled = true;
+        btn.textContent = 'Installing...';
+        statusEl.textContent = 'Downloading GPU packages (this may take several minutes)...';
+        statusEl.style.color = 'var(--amber)';
+        try {
+            const resp = await fetch('/api/local-model/gpu-install', { method: 'POST' });
+            const data = await resp.json();
+            if (data.error) {
+                statusEl.textContent = 'Install failed: ' + data.error;
+                statusEl.style.color = 'var(--red)';
+            } else {
+                refreshGpuStatus();
+            }
+        } catch (e) {
+            statusEl.textContent = 'Install failed: ' + e.message;
+            statusEl.style.color = 'var(--red)';
+        } finally {
+            btn.disabled = false;
+        }
+    });
+
+    document.getElementById('btn-gpu-remove').addEventListener('click', async () => {
+        if (!confirm('Remove NVIDIA GPU packages?')) return;
+        try {
+            await fetch('/api/local-model/gpu-remove', { method: 'POST' });
+            refreshGpuStatus();
+        } catch (e) { alert('Failed: ' + e.message); }
+    });
 
     let localStatusInterval = null;
     function updateLocalStatus() {
@@ -252,6 +328,7 @@ export function initSettings({ ws, state }) {
             source,
             filename: document.getElementById('s-local-filename').value.trim(),
             port: parseInt(document.getElementById('s-local-port').value) || 8766,
+            backend: document.getElementById('s-local-backend').value,
             gpu_device: document.getElementById('s-local-gpu-device').value.trim() || 'auto',
             n_ctx: parseInt(document.getElementById('s-local-ctx').value) || 16384,
             chat_format: document.getElementById('s-local-chat-format').value.trim(),
@@ -312,6 +389,7 @@ export function initSettings({ ws, state }) {
             LOCAL_MODEL_SOURCE: document.getElementById('s-local-source').value,
             LOCAL_MODEL_FILENAME: document.getElementById('s-local-filename').value,
             LOCAL_MODEL_PORT: parseInt(document.getElementById('s-local-port').value) || 8766,
+            LOCAL_MODEL_BACKEND: document.getElementById('s-local-backend').value,
             LOCAL_MODEL_GPU_DEVICE: document.getElementById('s-local-gpu-device').value.trim() || 'auto',
             LOCAL_MODEL_CONTEXT_LENGTH: parseInt(document.getElementById('s-local-ctx').value) || 16384,
             LOCAL_MODEL_CHAT_FORMAT: document.getElementById('s-local-chat-format').value,

@@ -837,6 +837,7 @@ async def api_chat_history(request: Request) -> JSONResponse:
 from ouroboros.local_model_api import (
     api_local_model_start, api_local_model_stop,
     api_local_model_status, api_local_model_test,
+    api_local_model_gpu_status, api_local_model_gpu_install, api_local_model_gpu_remove,
 )
 
 # ---------------------------------------------------------------------------
@@ -880,6 +881,9 @@ routes = [
     Route("/api/local-model/stop", endpoint=api_local_model_stop, methods=["POST"]),
     Route("/api/local-model/status", endpoint=api_local_model_status),
     Route("/api/local-model/test", endpoint=api_local_model_test, methods=["POST"]),
+    Route("/api/local-model/gpu-status", endpoint=api_local_model_gpu_status),
+    Route("/api/local-model/gpu-install", endpoint=api_local_model_gpu_install, methods=["POST"]),
+    Route("/api/local-model/gpu-remove", endpoint=api_local_model_gpu_remove, methods=["POST"]),
     WebSocketRoute("/ws", endpoint=ws_endpoint),
     Mount("/static", app=NoCacheStaticFiles(directory=str(web_dir)), name="static"),
 ]
