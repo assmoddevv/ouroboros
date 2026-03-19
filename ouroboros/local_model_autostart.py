@@ -19,7 +19,7 @@ def auto_start_local_model(settings: dict) -> None:
         source = str(settings.get("LOCAL_MODEL_SOURCE", "")).strip()
         filename = str(settings.get("LOCAL_MODEL_FILENAME", "")).strip()
         port = int(settings.get("LOCAL_MODEL_PORT", 8766))
-        n_gpu_layers = int(settings.get("LOCAL_MODEL_N_GPU_LAYERS", 0))
+        gpu_device = str(settings.get("LOCAL_MODEL_GPU_DEVICE", "auto")).strip()
         n_ctx = int(settings.get("LOCAL_MODEL_CONTEXT_LENGTH", 16384))
         chat_format = str(settings.get("LOCAL_MODEL_CHAT_FORMAT", "")).strip()
 
@@ -28,7 +28,7 @@ def auto_start_local_model(settings: dict) -> None:
         mgr.start_server(
             model_path,
             port=port,
-            n_gpu_layers=n_gpu_layers,
+            gpu_device=gpu_device,
             n_ctx=n_ctx,
             chat_format=chat_format,
         )

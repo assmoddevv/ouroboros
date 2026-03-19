@@ -10,7 +10,7 @@ async def api_local_model_start(request: Request) -> JSONResponse:
         source = body.get("source", "").strip()
         filename = body.get("filename", "").strip()
         port = int(body.get("port", 8766))
-        n_gpu_layers = int(body.get("n_gpu_layers", -1))
+        gpu_device = str(body.get("gpu_device", "auto")).strip()
         n_ctx = int(body.get("n_ctx", 0))
         chat_format = body.get("chat_format", "").strip()
 
@@ -27,7 +27,7 @@ async def api_local_model_start(request: Request) -> JSONResponse:
         import asyncio
         model_path = await asyncio.to_thread(mgr.download_model, source, filename)
         
-        mgr.start_server(model_path, port=port, n_gpu_layers=n_gpu_layers, n_ctx=n_ctx, chat_format=chat_format)
+        mgr.start_server(model_path, port=port, gpu_device=gpu_device, n_ctx=n_ctx, chat_format=chat_format)
         return JSONResponse({"status": "starting", "model_path": model_path})
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)

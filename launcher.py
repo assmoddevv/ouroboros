@@ -783,12 +783,11 @@ btn.addEventListener('click', async () => {
     const oaiKey = document.getElementById('openai-key').value.trim();
     if (oaiKey.length >= 10) data.OPENAI_API_KEY = oaiKey;
     const p = preset.value;
-    const defaultGpuLayers = navigator.platform.startsWith('Mac') ? -1 : 0;
     if (p && p !== 'custom' && PRESETS[p]) {
         data.LOCAL_MODEL_SOURCE = PRESETS[p].source;
         data.LOCAL_MODEL_FILENAME = PRESETS[p].filename;
         data.LOCAL_MODEL_CONTEXT_LENGTH = PRESETS[p].ctx;
-        data.LOCAL_MODEL_N_GPU_LAYERS = defaultGpuLayers;
+        data.LOCAL_MODEL_GPU_DEVICE = 'auto';
         data.USE_LOCAL_MAIN = !orKey;
         data.USE_LOCAL_LIGHT = !orKey;
         data.USE_LOCAL_CODE = !orKey;
@@ -796,7 +795,7 @@ btn.addEventListener('click', async () => {
     } else if (p === 'custom') {
         data.LOCAL_MODEL_SOURCE = document.getElementById('local-source').value.trim();
         data.LOCAL_MODEL_FILENAME = document.getElementById('local-filename').value.trim();
-        data.LOCAL_MODEL_N_GPU_LAYERS = defaultGpuLayers;
+        data.LOCAL_MODEL_GPU_DEVICE = 'auto';
         data.USE_LOCAL_MAIN = !orKey;
         data.USE_LOCAL_LIGHT = !orKey;
         data.USE_LOCAL_CODE = !orKey;

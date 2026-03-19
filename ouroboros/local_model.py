@@ -161,11 +161,28 @@ class LocalModelManager:
     # Start / Stop
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _resolve_gpu_device(gpu_device: str):
+        """Map gpu_device string to (n_gpu_layers, cuda_visible_devices).
+
+        "cpu"      -> (0, None)
+        "auto"/"" -> (-1, None)    llama.cpp picks best available
+        "metal"    -> (-1, None)    macOS Metal, auto-detected
+        "0"        -> (-1, "0")    specific CUDA GPU
+        "0,1"      -> (-1, "0,1")  multi-GPU
+        """
+        device = gpu_device.strip().lower()
+        if device == "cpu":
+            return 0, None
+        if device in ("auto", "metal", ""):
+            return -1, None
+        return -1, device
+
     def start_server(
         self,
         model_path: str,
         port: int = _LOCAL_MODEL_DEFAULT_PORT,
-        n_gpu_layers: int = -1,
+        gpu_device: str = "auto",
         n_ctx: int = 0,
         chat_format: str = "",
     ) -> None:
@@ -178,6 +195,8 @@ class LocalModelManager:
             self._port = port
             self._status = "loading"
             self._error = None
+
+            n_gpu_layers, cuda_device = self._resolve_gpu_device(gpu_device)
 
             python = sys.executable
             cmd = [
@@ -192,7 +211,10 @@ class LocalModelManager:
             self._context_length = effective_ctx
             cmd.extend(["--n_ctx", str(effective_ctx)])
 
-            log.info("Starting local model server: %s", " ".join(cmd))
+            log.info(
+                "Starting local model server (device=%s, n_gpu_layers=%d): %s",
+                gpu_device, n_gpu_layers, " ".join(cmd),
+            )
 
             try:
                 probe = subprocess.run(
@@ -225,6 +247,10 @@ class LocalModelManager:
                     stderr=subprocess.PIPE,
                     stdin=subprocess.DEVNULL,
                 )
+                if cuda_device is not None:
+                    env = os.environ.copy()
+                    env["CUDA_VISIBLE_DEVICES"] = cuda_device
+                    _popen_kwargs["env"] = env
                 if sys.platform == "win32":
                     _popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
                 else:

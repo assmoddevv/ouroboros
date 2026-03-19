@@ -62,7 +62,11 @@ if [ "$OS" = "Darwin" ]; then
         2>&1 \
         || echo "WARNING: llama-cpp-python install failed — local model support will not be available"
 else
-    "${DEST}/bin/pip3" install --quiet 'llama-cpp-python[server]' --prefer-binary 2>&1 \
+    "${DEST}/bin/pip3" install --quiet 'llama-cpp-python[server]' \
+        --prefer-binary \
+        --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cu124 \
+        2>&1 \
+        || "${DEST}/bin/pip3" install --quiet 'llama-cpp-python[server]' --prefer-binary 2>&1 \
         || echo "WARNING: llama-cpp-python install failed — local model support will not be available"
 fi
 
