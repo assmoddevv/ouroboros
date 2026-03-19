@@ -60,6 +60,8 @@ class LocalModelManager:
         self._model_name: str = ""
         self._download_progress: float = 0.0
         self._stderr_buf: bytes = b""
+        self._active_backend: str = "cpu"
+        self._active_chat_format: str = ""
 
     # ------------------------------------------------------------------
     # Properties
@@ -241,6 +243,8 @@ class LocalModelManager:
             self._port = port
             self._status = "loading"
             self._error = None
+            self._active_backend = backend
+            self._active_chat_format = chat_format
 
             n_gpu_layers, cuda_device = self._resolve_gpu_device(gpu_device)
 
@@ -354,10 +358,16 @@ class LocalModelManager:
                         stderr_tail = self._stderr_buf.decode("utf-8", errors="replace")[-500:]
                     except Exception:
                         pass
+                self._proc = None
                 self._error = f"Server process exited during startup (code {rc})"
+                if self._active_backend == "nvidia_cuda" and "GGML_ASSERT" in stderr_tail:
+                    self._error = (
+                        "GPU backend version is too old for this model's GGUF format. "
+                        "Reinstall GPU packages with CUDA Toolkit installed, "
+                        "or switch Backend to CPU."
+                    )
                 if stderr_tail:
                     self._error += f": {stderr_tail}"
-                self._proc = None
                 return
             try:
                 health = self.health_check()
@@ -366,8 +376,8 @@ class LocalModelManager:
                     self._context_length = health.get("context_length", 0)
                     self._model_name = health.get("model_name", "")
                     log.info(
-                        "Local model server ready (ctx=%d, model=%s)",
-                        self._context_length, self._model_name,
+                        "Local model server ready (ctx=%d, model=%s, backend=%s)",
+                        self._context_length, self._model_name, self._active_backend,
                     )
                     return
             except Exception:

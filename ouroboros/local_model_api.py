@@ -98,10 +98,37 @@ async def _run_pip(cmd, env=None, timeout=1800):
     return proc.returncode == 0, output
 
 
+def _build_env_with_cuda() -> dict:
+    """Build environment dict with CUDA paths for source compilation."""
+    import os, glob
+    env = os.environ.copy()
+    env["CMAKE_ARGS"] = "-DGGML_CUDA=on"
+
+    cuda_path = env.get("CUDA_PATH", "")
+    if not cuda_path:
+        for pattern in [
+            r"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v*",
+            "/usr/local/cuda*",
+        ]:
+            matches = sorted(glob.glob(pattern), reverse=True)
+            if matches:
+                cuda_path = matches[0]
+                break
+
+    if cuda_path:
+        env["CUDA_PATH"] = cuda_path
+        cuda_bin = os.path.join(cuda_path, "bin")
+        if os.path.isdir(cuda_bin) and cuda_bin not in env.get("PATH", ""):
+            env["PATH"] = cuda_bin + os.pathsep + env.get("PATH", "")
+
+    return env
+
+
 async def api_local_model_gpu_install(request: Request) -> JSONResponse:
-    """Install GPU backend. Strategy:
-    1. Try pre-built CUDA wheel (fast, no build tools needed).
-    2. If that fails and CUDA Toolkit is available, build from source.
+    """Install GPU backend.
+
+    1. Try source build with CUDA (picks up CUDA Toolkit from standard paths).
+    2. If source build fails, fall back to pre-built wheel.
     """
     global _gpu_install_lock
     if _gpu_install_lock:
@@ -117,62 +144,61 @@ async def api_local_model_gpu_install(request: Request) -> JSONResponse:
 
     _gpu_install_lock = True
     try:
-        # ── Attempt 1: pre-built CUDA wheel ──────────────────────────
+        # ── Attempt 1: source build with CUDA ────────────────────────
+        if GPU_BACKEND_DIR.exists():
+            shutil.rmtree(GPU_BACKEND_DIR)
+        os.makedirs(sp, exist_ok=True)
+
+        build_env = _build_env_with_cuda()
+        cmd_source = [
+            python, "-m", "pip", "install",
+            "--target", sp, "--no-cache-dir",
+            "llama-cpp-python[server]",
+        ]
+        log.info("GPU install attempt 1 (source build): CUDA_PATH=%s, %s",
+                 build_env.get("CUDA_PATH", ""), " ".join(cmd_source))
+        ok, output = await _run_pip(cmd_source, env=build_env)
+
+        if ok:
+            cmd_rt = [python, "-m", "pip", "install", "--target", sp,
+                      "--prefer-binary"] + _CUDA_RUNTIME_PACKAGES
+            await _run_pip(cmd_rt, timeout=600)
+            log.info("GPU backend installed (source build) to %s", sp)
+            return JSONResponse({"status": "installed", "method": "source", "path": sp})
+
+        source_details = output[-2000:]
+        log.warning("Source build failed: %s", source_details[-500:])
+
+        # ── Attempt 2: pre-built wheel ───────────────────────────────
         if GPU_BACKEND_DIR.exists():
             shutil.rmtree(GPU_BACKEND_DIR)
         os.makedirs(sp, exist_ok=True)
 
         cmd_prebuilt = [
             python, "-m", "pip", "install",
-            "--target", sp,
-            "--prefer-binary",
+            "--target", sp, "--prefer-binary",
             "--extra-index-url", _CUDA_WHEEL_INDEX,
             "llama-cpp-python[server]",
         ] + _CUDA_RUNTIME_PACKAGES
 
-        log.info("GPU install attempt 1 (pre-built wheel): %s", " ".join(cmd_prebuilt))
-        ok, output = await _run_pip(cmd_prebuilt)
-
-        if ok:
-            log.info("GPU backend installed (pre-built) to %s", sp)
-            return JSONResponse({"status": "installed", "method": "prebuilt", "path": sp})
-
-        log.warning("Pre-built wheel failed: %s", output[-500:])
-
-        # ── Attempt 2: build from source with CUDA ───────────────────
-        if GPU_BACKEND_DIR.exists():
-            shutil.rmtree(GPU_BACKEND_DIR)
-        os.makedirs(sp, exist_ok=True)
-
-        build_env = os.environ.copy()
-        build_env["CMAKE_ARGS"] = "-DGGML_CUDA=on"
-
-        cmd_source = [
-            python, "-m", "pip", "install",
-            "--target", sp,
-            "--no-cache-dir",
-            "llama-cpp-python[server]",
-        ]
-        cmd_runtime = [
-            python, "-m", "pip", "install",
-            "--target", sp,
-            "--prefer-binary",
-        ] + _CUDA_RUNTIME_PACKAGES
-
-        log.info("GPU install attempt 2 (build from source): %s", " ".join(cmd_source))
-        ok2, output2 = await _run_pip(cmd_source, env=build_env)
+        log.info("GPU install attempt 2 (pre-built wheel): %s", " ".join(cmd_prebuilt))
+        ok2, output2 = await _run_pip(cmd_prebuilt)
 
         if ok2:
-            await _run_pip(cmd_runtime, timeout=600)
-            log.info("GPU backend installed (source build) to %s", sp)
-            return JSONResponse({"status": "installed", "method": "source", "path": sp})
+            log.info("GPU backend installed (pre-built) to %s", sp)
+            return JSONResponse({
+                "status": "installed",
+                "method": "prebuilt",
+                "path": sp,
+                "warning": "Installed pre-built GPU wheel (may not support newest models). "
+                           "For full compatibility: install CUDA Toolkit + CMake + C++ compiler, "
+                           "then reinstall.",
+            })
 
-        details = output2[-2000:]
-        log.error("GPU source build also failed: %s", details[-500:])
+        log.error("Both install methods failed")
         return JSONResponse({
-            "error": "GPU install failed. Pre-built wheel unavailable, source build failed. "
-                     "Install CUDA Toolkit + CMake for source build.",
-            "details": details,
+            "error": "GPU install failed. Source build log (truncated):",
+            "details": source_details,
         }, status_code=500)
 
     except Exception as e:

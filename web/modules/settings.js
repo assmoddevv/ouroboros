@@ -274,6 +274,10 @@ export function initSettings({ ws, state }) {
                 statusEl.style.color = 'var(--red)';
             } else {
                 refreshGpuStatus();
+                if (data.warning) {
+                    statusEl.textContent += ' \u2014 ' + data.warning;
+                    statusEl.style.color = 'var(--amber)';
+                }
             }
         } catch (e) {
             statusEl.textContent = 'Install failed: ' + e.message;
