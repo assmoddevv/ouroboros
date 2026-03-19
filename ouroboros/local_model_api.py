@@ -92,22 +92,14 @@ async def api_local_model_gpu_install(request: Request) -> JSONResponse:
     if _gpu_install_lock:
         return JSONResponse({"error": "Installation already in progress"}, status_code=409)
 
-    import asyncio, subprocess, sys, os
-    from ouroboros.compat import embedded_python_candidates
+    import asyncio, subprocess, sys, os, logging
+
+    log = logging.getLogger("ouroboros.local_model_api")
 
     sp = _gpu_backend_site_packages()
     os.makedirs(sp, exist_ok=True)
 
-    repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    python = None
-    for candidate in embedded_python_candidates(
-        __import__("pathlib").Path(repo_root)
-    ):
-        if candidate.exists():
-            python = str(candidate)
-            break
-    if not python:
-        python = sys.executable
+    python = sys.executable
 
     cmd = [
         python, "-m", "pip", "install",
@@ -116,21 +108,28 @@ async def api_local_model_gpu_install(request: Request) -> JSONResponse:
         "--extra-index-url", _CUDA_WHEEL_INDEX,
     ] + _GPU_PACKAGES
 
+    log.info("GPU backend install: %s", " ".join(cmd))
+
     _gpu_install_lock = True
     try:
         proc = await asyncio.to_thread(
             subprocess.run, cmd,
-            capture_output=True, text=True, timeout=600,
+            capture_output=True, text=True, timeout=1800,
         )
         if proc.returncode != 0:
+            details = (proc.stderr or proc.stdout or "")[-2000:]
+            log.error("GPU backend install failed (code %d): %s", proc.returncode, details[-500:])
             return JSONResponse({
                 "error": f"pip install failed (code {proc.returncode})",
-                "details": (proc.stderr or proc.stdout or "")[-2000:],
+                "details": details,
             }, status_code=500)
+        log.info("GPU backend installed to %s", sp)
         return JSONResponse({"status": "installed", "path": sp})
     except subprocess.TimeoutExpired:
-        return JSONResponse({"error": "Installation timed out"}, status_code=500)
+        log.error("GPU backend install timed out")
+        return JSONResponse({"error": "Installation timed out (30 min limit)"}, status_code=500)
     except Exception as e:
+        log.error("GPU backend install error: %s", e)
         return JSONResponse({"error": str(e)}, status_code=500)
     finally:
         _gpu_install_lock = False
