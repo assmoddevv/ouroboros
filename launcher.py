@@ -732,7 +732,7 @@ a { color:#e85d6f; }
   <input id="openai-key" type="password" placeholder="sk-...">
   <p class="hint">Enables the web_search tool. <a href="https://platform.openai.com/api-keys" target="_blank">Get key</a></p>
 
-  <h3>Local Model (optional)</h3>
+  <h3>Built-in Model Server (optional)</h3>
   <label>Preset</label>
   <select id="local-preset">
     <option value="">None — use cloud only</option>
@@ -828,7 +828,7 @@ def _run_first_run_wizard() -> bool:
             key = str(data.get("OPENROUTER_API_KEY", "")).strip()
             has_local = bool(data.get("LOCAL_MODEL_SOURCE", "").strip())
             if len(key) < 10 and not has_local:
-                return "Provide an OpenRouter API key or select a local model."
+                return "Provide an OpenRouter API key or select a built-in model preset."
             settings.update(data)
             try:
                 _save_settings(settings)

@@ -34,6 +34,7 @@ from ouroboros.utils import (
 )
 from ouroboros.config import resolve_effort
 from ouroboros.llm import LLMClient, DEFAULT_LIGHT_MODEL
+from ouroboros.loop_llm_call import _display_model_name
 from ouroboros.memory import Memory
 from ouroboros.context import (
     build_runtime_section, build_memory_sections,
@@ -218,17 +219,20 @@ class BackgroundConsciousness:
         final_content = ""
         round_idx = 0
         all_pending_events = []  # Accumulate events across all tool calls
+        _use_local_light = os.environ.get("USE_LOCAL_LIGHT", "").lower() in ("true", "1")
+        display_model = _display_model_name(model, _use_local_light)
 
         try:
             for round_idx in range(1, self._max_bg_rounds + 1):
                 if self._paused:
                     break
                 _use_local_light = os.environ.get("USE_LOCAL_LIGHT", "").lower() in ("true", "1")
+                display_model = _display_model_name(model, _use_local_light)
                 self._emit_live_log(
                     "llm_round_started",
                     round=round_idx,
                     attempt=1,
-                    model=model,
+                    model=display_model,
                     reasoning_effort="low",
                     use_local=bool(_use_local_light),
                 )
@@ -259,11 +263,10 @@ class BackgroundConsciousness:
                 # Report usage to supervisor
                 if self._event_queue is not None:
                     provider = "local" if _use_local_light else "openrouter"
-                    model_name = f"{model} (local)" if _use_local_light else model
                     self._event_queue.put({
                         "type": "llm_usage",
                         "provider": provider,
-                        "model": model_name,
+                        "model": display_model,
                         "usage": usage,
                         "cost": cost,
                         "source": "consciousness",
@@ -277,7 +280,7 @@ class BackgroundConsciousness:
                     "llm_round_finished",
                     round=round_idx,
                     attempt=1,
-                    model=model,
+                    model=display_model,
                     reasoning_effort="low",
                     prompt_tokens=int(usage.get("prompt_tokens") or 0),
                     completion_tokens=int(usage.get("completion_tokens") or 0),
@@ -329,14 +332,16 @@ class BackgroundConsciousness:
                 "thought_preview": (final_content or "")[:300],
                 "cost_usd": total_cost,
                 "rounds": round_idx,
-                "model": model,
+                "model": display_model,
             })
 
         except Exception as e:
-            self._emit_live_log("llm_round_error", round=round_idx, model=model, error=repr(e))
+            display_model = _display_model_name(model, _use_local_light)
+            self._emit_live_log("llm_round_error", round=round_idx, model=display_model, error=repr(e))
             append_jsonl(self._drive_root / "logs" / "events.jsonl", {
                 "ts": utc_now_iso(),
                 "type": "consciousness_llm_error",
+                "model": display_model,
                 "error": repr(e),
             })
 

@@ -228,7 +228,7 @@ class LLMClient:
         self._async_client = None
         self._async_client_api_key: Optional[str] = None
         self._local_client = None
-        self._local_port: Optional[int] = None
+        self._local_port: Any = None
 
     def _get_client(self):
         current_api_key = self._api_key_override
@@ -251,15 +251,25 @@ class LLMClient:
         return self._client
 
     def _get_local_client(self):
-        port = int(os.environ.get("LOCAL_MODEL_PORT", "8766"))
-        if self._local_client is None or self._local_port != port:
+        custom_url = os.environ.get("LOCAL_MODEL_URL", "").strip()
+        if custom_url:
+            base_url = custom_url.rstrip("/")
+            if not base_url.endswith("/v1"):
+                base_url += "/v1"
+            cache_key = base_url
+        else:
+            port = int(os.environ.get("LOCAL_MODEL_PORT", "8766"))
+            base_url = f"http://127.0.0.1:{port}/v1"
+            cache_key = port
+
+        if self._local_client is None or self._local_port != cache_key:
             from openai import OpenAI
             self._local_client = OpenAI(
-                base_url=f"http://127.0.0.1:{port}/v1",
+                base_url=base_url,
                 api_key="local",
                 max_retries=0,
             )
-            self._local_port = port
+            self._local_port = cache_key
         return self._local_client
 
     def _get_async_client(self):
@@ -440,8 +450,9 @@ class LLMClient:
                 for t in tools
             ]
 
+        model_name = os.environ.get("LOCAL_MODEL_NAME", "").strip() or "local-model"
         kwargs: Dict[str, Any] = {
-            "model": "local-model",
+            "model": model_name,
             "messages": clean_messages,
             "max_tokens": local_max,
         }

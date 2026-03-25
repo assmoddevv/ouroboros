@@ -68,7 +68,9 @@ SETTINGS_DEFAULTS = {
     "OUROBOROS_EFFORT_CONSCIOUSNESS": "low",
     "GITHUB_TOKEN": "",
     "GITHUB_REPO": "",
-    # Local model (llama-cpp-python server)
+    # Local model (llama-cpp-python server or external OpenAI-compatible server)
+    "LOCAL_MODEL_URL": "",
+    "LOCAL_MODEL_NAME": "",
     "LOCAL_MODEL_SOURCE": "",
     "LOCAL_MODEL_FILENAME": "",
     "LOCAL_MODEL_PORT": 8766,
@@ -214,6 +216,7 @@ def apply_settings_to_env(settings: dict) -> None:
         "OUROBOROS_REVIEW_MODELS", "OUROBOROS_REVIEW_ENFORCEMENT",
         "OUROBOROS_EFFORT_TASK", "OUROBOROS_EFFORT_EVOLUTION",
         "OUROBOROS_EFFORT_REVIEW", "OUROBOROS_EFFORT_CONSCIOUSNESS",
+        "LOCAL_MODEL_URL", "LOCAL_MODEL_NAME",
         "LOCAL_MODEL_SOURCE", "LOCAL_MODEL_FILENAME",
         "LOCAL_MODEL_PORT", "LOCAL_MODEL_N_GPU_LAYERS", "LOCAL_MODEL_CONTEXT_LENGTH",
         "LOCAL_MODEL_CHAT_FORMAT",

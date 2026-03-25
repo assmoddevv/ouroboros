@@ -14,6 +14,7 @@ import json
 import logging
 import os
 import pathlib
+import subprocess
 import sys
 import threading
 import time
@@ -39,6 +40,38 @@ DATA_DIR = pathlib.Path(os.environ.get("OUROBOROS_DATA_DIR",
 PORT = int(os.environ.get("OUROBOROS_SERVER_PORT", "8765"))
 
 sys.path.insert(0, str(REPO_DIR))
+
+
+def _is_source_dev_mode() -> bool:
+    """Return True when running directly from the current source checkout."""
+    try:
+        return (not getattr(sys, "frozen", False)) and REPO_DIR.resolve() == pathlib.Path(__file__).resolve().parent
+    except Exception:
+        return not getattr(sys, "frozen", False)
+
+
+def _resolve_branch_dev(default: str = "ouroboros") -> str:
+    """Use the current git branch in source-dev mode to avoid forced checkouts."""
+    if not _is_source_dev_mode():
+        return default
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=str(REPO_DIR),
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        branch = (result.stdout or "").strip()
+        if branch and branch != "HEAD":
+            return branch
+    except Exception:
+        pass
+    return default
+
+
+BRANCH_DEV = _resolve_branch_dev()
+BRANCH_STABLE = "ouroboros-stable"
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -158,11 +191,17 @@ def _run_supervisor(settings: dict) -> None:
         from supervisor.git_ops import init as git_ops_init, ensure_repo_present, safe_restart
         git_ops_init(
             repo_dir=REPO_DIR, drive_root=DATA_DIR, remote_url="",
-            branch_dev="ouroboros", branch_stable="ouroboros-stable",
+            branch_dev=BRANCH_DEV, branch_stable=BRANCH_STABLE,
         )
         ensure_repo_present()
         setup_remote_if_configured(settings, log)
-        ok, msg = safe_restart(reason="bootstrap", unsynced_policy="rescue_and_reset")
+        def _safe_restart_guard(reason: str, unsynced_policy: str = "rescue_and_reset"):
+            if _is_source_dev_mode():
+                log.info("Source dev mode: skipping safe_restart for %s on branch %s", reason, BRANCH_DEV)
+                return True, f"skipped: source-dev ({BRANCH_DEV})"
+            return safe_restart(reason=reason, unsynced_policy=unsynced_policy)
+
+        ok, msg = _safe_restart_guard(reason="bootstrap", unsynced_policy="rescue_and_reset")
         if not ok:
             log.error("Supervisor bootstrap failed: %s", msg)
 
@@ -185,7 +224,7 @@ def _run_supervisor(settings: dict) -> None:
             repo_dir=REPO_DIR, drive_root=DATA_DIR, max_workers=max_workers,
             soft_timeout=soft_timeout, hard_timeout=hard_timeout,
             total_budget_limit=float(settings.get("TOTAL_BUDGET", 10.0)),
-            branch_dev="ouroboros", branch_stable="ouroboros-stable",
+            branch_dev=BRANCH_DEV, branch_stable=BRANCH_STABLE,
         )
 
         from supervisor.events import dispatch_event
@@ -227,14 +266,14 @@ def _run_supervisor(settings: dict) -> None:
 
         _event_ctx = types.SimpleNamespace(
             DRIVE_ROOT=DATA_DIR, REPO_DIR=REPO_DIR,
-            BRANCH_DEV="ouroboros", BRANCH_STABLE="ouroboros-stable",
+            BRANCH_DEV=BRANCH_DEV, BRANCH_STABLE=BRANCH_STABLE,
             bridge=bridge, WORKERS=WORKERS, PENDING=PENDING, RUNNING=RUNNING,
             MAX_WORKERS=max_workers,
             send_with_budget=send_with_budget, load_state=load_state, save_state=save_state,
             update_budget_from_usage=update_budget_from_usage, append_jsonl=append_jsonl,
             enqueue_task=enqueue_task, cancel_task_by_id=cancel_task_by_id,
             queue_review_task=queue_review_task, persist_queue_snapshot=persist_queue_snapshot,
-            safe_restart=safe_restart, kill_workers=kill_workers, spawn_workers=spawn_workers,
+            safe_restart=_safe_restart_guard, kill_workers=kill_workers, spawn_workers=spawn_workers,
             sort_pending=sort_pending, consciousness=_consciousness,
             request_restart=_request_restart_exit,
         )
@@ -303,7 +342,7 @@ def _run_supervisor(settings: dict) -> None:
                     _execute_panic_stop(_consciousness, kill_workers)
                 elif lowered.startswith("/restart"):
                     send_with_budget(chat_id, "♻️ Restarting (soft).")
-                    ok, restart_msg = safe_restart(reason="owner_restart", unsynced_policy="rescue_and_reset")
+                    ok, restart_msg = _safe_restart_guard(reason="owner_restart", unsynced_policy="rescue_and_reset")
                     if not ok:
                         send_with_budget(chat_id, f"⚠️ Restart cancelled: {restart_msg}")
                         continue
@@ -835,6 +874,7 @@ async def api_chat_history(request: Request) -> JSONResponse:
 from ouroboros.local_model_api import (
     api_local_model_start, api_local_model_stop,
     api_local_model_status, api_local_model_test,
+    api_local_model_gpu_info, api_local_model_install_cuda,
 )
 
 # ---------------------------------------------------------------------------
@@ -878,6 +918,8 @@ routes = [
     Route("/api/local-model/stop", endpoint=api_local_model_stop, methods=["POST"]),
     Route("/api/local-model/status", endpoint=api_local_model_status),
     Route("/api/local-model/test", endpoint=api_local_model_test, methods=["POST"]),
+    Route("/api/local-model/gpu-info", endpoint=api_local_model_gpu_info),
+    Route("/api/local-model/install-cuda", endpoint=api_local_model_install_cuda, methods=["POST"]),
     WebSocketRoute("/ws", endpoint=ws_endpoint),
     Mount("/static", app=NoCacheStaticFiles(directory=str(web_dir)), name="static"),
 ]
@@ -904,12 +946,15 @@ async def lifespan(app):
         _supervisor_ready.set()
         log.info("No API key or local model configured. Supervisor not started.")
 
-    if has_local and settings.get("LOCAL_MODEL_SOURCE"):
-        from ouroboros.local_model_autostart import auto_start_local_model
-        threading.Thread(
-            target=auto_start_local_model, args=(settings,),
-            daemon=True, name="local-model-autostart",
-        ).start()
+    if has_local and (settings.get("LOCAL_MODEL_SOURCE") or settings.get("LOCAL_MODEL_URL")):
+        if _is_source_dev_mode():
+            log.info("Source dev mode: skipping built-in model server autostart.")
+        else:
+            from ouroboros.local_model_autostart import auto_start_local_model
+            threading.Thread(
+                target=auto_start_local_model, args=(settings,),
+                daemon=True, name="local-model-autostart",
+            ).start()
 
     try:
         yield

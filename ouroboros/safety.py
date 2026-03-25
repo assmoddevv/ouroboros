@@ -18,6 +18,7 @@ import pathlib
 from typing import Tuple, Dict, Any, List, Optional
 
 from ouroboros.llm import LLMClient, DEFAULT_LIGHT_MODEL
+from ouroboros.loop_llm_call import _local_display_name
 from ouroboros.pricing import emit_llm_usage_event, estimate_cost
 from supervisor.state import update_budget_from_usage
 
@@ -145,7 +146,8 @@ def check_safety(
     _use_local_light = os.environ.get("USE_LOCAL_LIGHT", "").lower() in ("true", "1")
     try:
         light_model = os.environ.get("OUROBOROS_MODEL_LIGHT", DEFAULT_LIGHT_MODEL)
-        log.info(f"Running fast safety check on {tool_name} using {light_model} (local={_use_local_light})")
+        _fast_display = _local_display_name() if _use_local_light else light_model
+        log.info(f"Running fast safety check on {tool_name} using {_fast_display} (local={_use_local_light})")
         msg, usage = client.chat(
             messages=[
                 {"role": "system", "content": _get_safety_prompt()},
@@ -155,7 +157,7 @@ def check_safety(
             use_local=_use_local_light,
         )
         if usage:
-            model_name = f"{light_model} (local)" if _use_local_light else light_model
+            model_name = f"{_local_display_name()} (local)" if _use_local_light else light_model
             cost = float(usage.get("cost") or 0.0)
             if not _use_local_light and cost == 0.0:
                 cost = estimate_cost(
@@ -199,7 +201,8 @@ def check_safety(
             "OUROBOROS_MODEL_CODE",
             os.environ.get("OUROBOROS_MODEL", "anthropic/claude-opus-4.6"),
         )
-        log.info(f"Running deep safety check on {tool_name} using {heavy_model} (local={_use_local_code})")
+        _deep_display = _local_display_name() if _use_local_code else heavy_model
+        log.info(f"Running deep safety check on {tool_name} using {_deep_display} (local={_use_local_code})")
         deep_system = (
             _get_safety_prompt()
             + "\nThink carefully. Is this actually malicious, or just a normal development command? "
@@ -214,7 +217,7 @@ def check_safety(
             use_local=_use_local_code,
         )
         if usage:
-            model_name = f"{heavy_model} (local)" if _use_local_code else heavy_model
+            model_name = f"{_local_display_name()} (local)" if _use_local_code else heavy_model
             cost = float(usage.get("cost") or 0.0)
             if not _use_local_code and cost == 0.0:
                 cost = estimate_cost(

@@ -9,6 +9,7 @@ Extracted from loop.py to keep the main loop orchestrator focused.
 from __future__ import annotations
 
 import json
+import os as _os
 import pathlib
 import queue
 import time
@@ -21,6 +22,26 @@ from ouroboros.pricing import emit_llm_usage_event, estimate_cost, infer_model_c
 from ouroboros.utils import utc_now_iso, append_jsonl
 
 log = logging.getLogger(__name__)
+
+
+def _local_display_name() -> str:
+    """Return a human-readable name for the currently active local model."""
+    name = _os.environ.get("LOCAL_MODEL_NAME", "").strip()
+    if name:
+        return name
+    try:
+        from ouroboros.local_model import get_manager
+        name = get_manager()._model_name
+        if name:
+            return name
+    except Exception:
+        pass
+    return "local-model"
+
+
+def _display_model_name(model: str, use_local: bool) -> str:
+    """Return the user-visible model name for logs and usage events."""
+    return f"{_local_display_name()} (local)" if use_local else model
 
 
 def _emit_live_log(event_queue: Optional[queue.Queue], payload: Dict[str, Any]) -> None:
@@ -62,13 +83,14 @@ def call_llm_with_retry(
 
     for attempt in range(max_retries):
         try:
+            display_model = _display_model_name(model, use_local)
             _emit_live_log(event_queue, {
                 "type": "llm_round_started",
                 "task_id": task_id,
                 "task_type": task_type,
                 "round": round_idx,
                 "attempt": attempt + 1,
-                "model": model,
+                "model": display_model,
                 "reasoning_effort": effort,
                 "use_local": bool(use_local),
             })
@@ -81,11 +103,9 @@ def call_llm_with_retry(
             add_usage(accumulated_usage, usage)
 
             cost = float(usage.get("cost") or 0)
-            display_model = model
             provider = "local" if use_local else "openrouter"
             if use_local:
                 cost = 0.0
-                display_model = f"{model} (local)"
             elif cost == 0.0:
                 cost = estimate_cost(
                     model,
@@ -124,7 +144,7 @@ def call_llm_with_retry(
                     "task_type": task_type,
                     "round": round_idx,
                     "attempt": attempt + 1,
-                    "model": model,
+                    "model": display_model,
                     "finish_reason": finish_reason,
                 })
                 log.warning("%s, attempt %d/%d", log_msg, attempt + 1, max_retries)
@@ -133,7 +153,7 @@ def call_llm_with_retry(
                     "ts": utc_now_iso(), "type": event_type,
                     "task_id": task_id,
                     "round": round_idx, "attempt": attempt + 1,
-                    "model": model,
+                    "model": display_model,
                     "raw_content": repr(content)[:500] if content else None,
                     "raw_tool_calls": repr(tool_calls)[:500] if tool_calls else None,
                     "finish_reason": finish_reason,
@@ -182,20 +202,21 @@ def call_llm_with_retry(
 
         except Exception as e:
             last_error = e
+            display_model = _display_model_name(model, use_local)
             _emit_live_log(event_queue, {
                 "type": "llm_round_error",
                 "task_id": task_id,
                 "task_type": task_type,
                 "round": round_idx,
                 "attempt": attempt + 1,
-                "model": model,
+                "model": display_model,
                 "error": repr(e),
             })
             append_jsonl(drive_logs / "events.jsonl", {
                 "ts": utc_now_iso(), "type": "llm_api_error",
                 "task_id": task_id,
                 "round": round_idx, "attempt": attempt + 1,
-                "model": model, "error": repr(e),
+                "model": display_model, "error": repr(e),
             })
             if isinstance(e, LocalContextTooLargeError):
                 append_jsonl(drive_logs / "events.jsonl", {
@@ -204,7 +225,7 @@ def call_llm_with_retry(
                     "task_id": task_id,
                     "round": round_idx,
                     "attempt": attempt + 1,
-                    "model": model,
+                    "model": display_model,
                     "error": repr(e),
                 })
                 break

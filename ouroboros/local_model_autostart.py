@@ -8,7 +8,32 @@ log = logging.getLogger(__name__)
 
 
 def auto_start_local_model(settings: dict) -> None:
-    """Download (if needed) and start the local model server in background."""
+    """Download (if needed) and start the local model server in background.
+
+    When LOCAL_MODEL_URL points to an external server, just health-check it.
+    When it points to localhost (auto-filled by a previous Start), fall through
+    to start the built-in server.
+    """
+    external_url = str(settings.get("LOCAL_MODEL_URL", "")).strip()
+    if external_url:
+        from ouroboros.local_model import LocalModelManager, is_localhost_model_url
+        if not is_localhost_model_url(external_url):
+            try:
+                health = LocalModelManager.health_check_external(external_url)
+                if health.get("ok"):
+                    log.info(
+                        "External local model server reachable: %s (model=%s)",
+                        external_url, health.get("model_name"),
+                    )
+                else:
+                    log.warning(
+                        "External local model server at %s not reachable: %s",
+                        external_url, health.get("error"),
+                    )
+            except Exception as exc:
+                log.warning("External server health-check failed: %s", exc)
+            return
+
     try:
         from ouroboros.local_model import get_manager
 

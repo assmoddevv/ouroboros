@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -20,6 +21,18 @@ from ouroboros.compat import IS_MACOS, terminate_process_tree, kill_process_tree
 log = logging.getLogger(__name__)
 
 _LOCAL_MODEL_DEFAULT_PORT = 8766
+_LOCALHOST_MODEL_URL_RE = re.compile(r"^https?://(?:127\.0\.0\.1|localhost)(?::\d+)?(?:/|$)", re.IGNORECASE)
+
+
+def is_localhost_model_url(url: str) -> bool:
+    """Return True when the URL points at a loopback OpenAI-compatible server."""
+    return bool(_LOCALHOST_MODEL_URL_RE.match(str(url or "").strip()))
+
+
+def is_external_server_mode() -> bool:
+    """Return True only for non-localhost custom OpenAI-compatible URLs."""
+    configured_url = os.environ.get("LOCAL_MODEL_URL", "").strip()
+    return bool(configured_url) and not is_localhost_model_url(configured_url)
 
 # Windows: prevent console windows when spawning subprocesses from the GUI app.
 _SUBPROCESS_NO_WINDOW = (
@@ -172,7 +185,7 @@ class LocalModelManager:
         """Start the llama-cpp-python server as a subprocess."""
         with self._lock:
             if self._proc is not None and self._proc.poll() is None:
-                raise RuntimeError("Local model server is already running")
+                raise RuntimeError("Built-in model server is already running")
 
             self._model_path = model_path
             self._port = port
@@ -212,9 +225,14 @@ class LocalModelManager:
                 details = (probe.stderr or probe.stdout or "").strip()
                 if IS_MACOS:
                     hint = 'CMAKE_ARGS="-DGGML_METAL=on" pip install llama-cpp-python[server]'
+                elif sys.platform == "win32":
+                    hint = (
+                        "Use the 'Setup CUDA' button in Settings to install with GPU support, "
+                        "or set a Server URL to use Ollama / LM Studio instead"
+                    )
                 else:
                     hint = "pip install llama-cpp-python[server]"
-                self._error = f"llama-cpp-python is not installed or failed to import. Install with: {hint}"
+                self._error = f"llama-cpp-python is not installed or failed to import. {hint}"
                 if details:
                     self._error += f": {details[-500:]}"
                 raise RuntimeError(self._error)
@@ -232,7 +250,7 @@ class LocalModelManager:
                 self._proc = subprocess.Popen(cmd, **_with_hidden_subprocess(_popen_kwargs))
             except FileNotFoundError:
                 self._status = "error"
-                self._error = "Python executable not found. Cannot start local model server."
+                self._error = "Python executable not found. Cannot start built-in model server."
                 raise RuntimeError(self._error)
 
             self._stderr_buf = b""
@@ -355,6 +373,35 @@ class LocalModelManager:
             "model_name": model_info.get("id", "unknown"),
             "context_length": ctx,
         }
+
+    @staticmethod
+    def health_check_external(base_url: str) -> Dict[str, Any]:
+        """Health-check an external OpenAI-compatible server by URL."""
+        import requests
+
+        url = base_url.rstrip("/")
+        if not url.endswith("/v1"):
+            url += "/v1"
+        try:
+            resp = requests.get(f"{url}/models", timeout=5)
+            resp.raise_for_status()
+            data = resp.json()
+            models = data.get("data", [])
+            if not models:
+                return {"ok": False, "error": "Server responded but no models loaded"}
+            model_info = models[0]
+            ctx = model_info.get("meta", {}).get("n_ctx_train", 0)
+            if not ctx:
+                ctx = model_info.get("context_window", 0)
+            return {
+                "ok": True,
+                "model_name": model_info.get("id", "unknown"),
+                "context_length": ctx,
+            }
+        except requests.ConnectionError:
+            return {"ok": False, "error": f"Cannot connect to {url}"}
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
 
     def get_context_length(self) -> int:
         """Return cached context length, or query the server."""

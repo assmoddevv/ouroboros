@@ -16,23 +16,37 @@ export function initSettings({ ws, state }) {
             </div>
             <div class="divider"></div>
             <div class="form-section">
-                <h3>Local Model</h3>
-                <div class="form-row">
-                    <div class="form-field"><label>Model Source</label><input id="s-local-source" placeholder="bartowski/Llama-3.3-70B-Instruct-GGUF or /path/to/model.gguf" style="width:400px"></div>
+                <h3>Model Server</h3>
+                <div style="margin:0 0 12px 0;font-size:12px;color:var(--text-secondary)">
+                    Use a server URL (Ollama, LM Studio, llama.cpp) or run the built-in llama.cpp GGUF server.
                 </div>
                 <div class="form-row">
-                    <div class="form-field"><label>GGUF Filename (for HF repos)</label><input id="s-local-filename" placeholder="Llama-3.3-70B-Instruct-Q4_K_M.gguf" style="width:400px"></div>
+                    <div class="form-field"><label>Server URL (optional)</label><input id="s-local-url" placeholder="http://localhost:11434/v1" style="width:400px"></div>
                 </div>
                 <div class="form-row">
-                    <div class="form-field"><label>Port</label><input id="s-local-port" type="number" value="8766" style="width:100px"></div>
-                    <div class="form-field"><label>GPU Layers (-1 = all)</label><input id="s-local-gpu-layers" type="number" value="-1" style="width:100px"></div>
-                    <div class="form-field"><label>Context Length</label><input id="s-local-ctx" type="number" value="16384" style="width:120px" placeholder="16384"></div>
-                    <div class="form-field"><label>Chat Format</label><input id="s-local-chat-format" value="" placeholder="auto-detect" style="width:200px"></div>
+                    <div class="form-field"><label>Model Name (optional)</label><input id="s-local-model-name" placeholder="llama3, gpt-4, etc." style="width:300px"></div>
                 </div>
-                <div class="form-row" style="align-items:center;gap:8px">
-                    <button class="btn btn-primary" id="btn-local-start">Start</button>
-                    <button class="btn btn-primary" id="btn-local-stop" style="opacity:0.5">Stop</button>
-                    <button class="btn btn-primary" id="btn-local-test" style="opacity:0.5">Test Tool Calling</button>
+                <div id="local-builtin-section">
+                    <div style="margin:12px 0 8px 0;font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px">Built-in llama.cpp Server</div>
+                    <div class="form-row">
+                        <div class="form-field"><label>Model Source</label><input id="s-local-source" placeholder="bartowski/Llama-3.3-70B-Instruct-GGUF or /path/to/model.gguf" style="width:400px"></div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-field"><label>GGUF Filename (for HF repos)</label><input id="s-local-filename" placeholder="Llama-3.3-70B-Instruct-Q4_K_M.gguf" style="width:400px"></div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-field"><label>Port</label><input id="s-local-port" type="number" value="8766" style="width:100px"></div>
+                        <div class="form-field"><label>GPU Layers (-1 = all)</label><input id="s-local-gpu-layers" type="number" value="-1" style="width:100px"></div>
+                        <div class="form-field"><label>Context Length</label><input id="s-local-ctx" type="number" value="16384" style="width:120px" placeholder="16384"></div>
+                        <div class="form-field"><label>Chat Format</label><input id="s-local-chat-format" value="" placeholder="auto-detect" style="width:200px"></div>
+                    </div>
+                    <div class="form-row" style="align-items:center;gap:8px">
+                        <button class="btn btn-primary" id="btn-local-start">Start</button>
+                        <button class="btn btn-primary" id="btn-local-stop" style="opacity:0.5">Stop</button>
+                        <button class="btn btn-primary" id="btn-local-test" style="opacity:0.5">Test Tool Calling</button>
+                        <button class="btn btn-primary" id="btn-cuda-setup" style="opacity:0.8">Setup CUDA</button>
+                    </div>
+                    <div id="cuda-status" style="margin-top:4px;font-size:12px;color:var(--text-muted);display:none"></div>
                 </div>
                 <div id="local-model-status" style="margin-top:8px;font-size:13px;color:var(--text-secondary)">Status: Offline</div>
                 <div id="local-model-test-result" style="margin-top:4px;font-size:12px;color:var(--text-muted);display:none"></div>
@@ -41,24 +55,24 @@ export function initSettings({ ws, state }) {
             <div class="form-section">
                 <h3>Models</h3>
                 <div style="margin:0 0 8px 0;font-size:12px;color:var(--text-secondary)">
-                    These fields are cloud model IDs. Enable <code>Local</code> to route that lane
-                    through the GGUF server configured above.
+                    These fields are cloud model IDs. Enable <code>Server</code> to route that lane
+                    through the model server configured above instead of cloud.
                 </div>
                 <div class="form-row" style="align-items:flex-end">
                     <div class="form-field"><label>Main Model</label><input id="s-model" value="anthropic/claude-opus-4.6" style="width:250px"></div>
-                    <label class="local-toggle"><input type="checkbox" id="s-local-main"> Local</label>
+                    <label class="local-toggle"><input type="checkbox" id="s-local-main"> Server</label>
                 </div>
                 <div class="form-row" style="align-items:flex-end">
                     <div class="form-field"><label>Code Model</label><input id="s-model-code" value="anthropic/claude-opus-4.6" style="width:250px"></div>
-                    <label class="local-toggle"><input type="checkbox" id="s-local-code"> Local</label>
+                    <label class="local-toggle"><input type="checkbox" id="s-local-code"> Server</label>
                 </div>
                 <div class="form-row" style="align-items:flex-end">
                     <div class="form-field"><label>Light Model</label><input id="s-model-light" value="anthropic/claude-sonnet-4.6" style="width:250px"></div>
-                    <label class="local-toggle"><input type="checkbox" id="s-local-light"> Local</label>
+                    <label class="local-toggle"><input type="checkbox" id="s-local-light"> Server</label>
                 </div>
                 <div class="form-row" style="align-items:flex-end">
                     <div class="form-field"><label>Fallback Model</label><input id="s-model-fallback" value="anthropic/claude-sonnet-4.6" style="width:250px"></div>
-                    <label class="local-toggle"><input type="checkbox" id="s-local-fallback"> Local</label>
+                    <label class="local-toggle"><input type="checkbox" id="s-local-fallback"> Server</label>
                 </div>
                 <div class="form-row">
                     <div class="form-field"><label>Claude Code Model</label><input id="s-claude-code-model" value="opus" placeholder="sonnet, opus, or full name" style="width:250px"></div>
@@ -194,17 +208,30 @@ export function initSettings({ ws, state }) {
         if (s.OUROBOROS_TOOL_TIMEOUT_SEC) document.getElementById('s-tool-timeout').value = s.OUROBOROS_TOOL_TIMEOUT_SEC;
         if (s.GITHUB_TOKEN) document.getElementById('s-gh-token').value = s.GITHUB_TOKEN;
         if (s.GITHUB_REPO) document.getElementById('s-gh-repo').value = s.GITHUB_REPO;
+        if (s.LOCAL_MODEL_URL) document.getElementById('s-local-url').value = s.LOCAL_MODEL_URL;
+        if (s.LOCAL_MODEL_NAME) document.getElementById('s-local-model-name').value = s.LOCAL_MODEL_NAME;
         if (s.LOCAL_MODEL_SOURCE) document.getElementById('s-local-source').value = s.LOCAL_MODEL_SOURCE;
         if (s.LOCAL_MODEL_FILENAME) document.getElementById('s-local-filename').value = s.LOCAL_MODEL_FILENAME;
         if (s.LOCAL_MODEL_PORT) document.getElementById('s-local-port').value = s.LOCAL_MODEL_PORT;
         if (s.LOCAL_MODEL_N_GPU_LAYERS != null) document.getElementById('s-local-gpu-layers').value = s.LOCAL_MODEL_N_GPU_LAYERS;
         if (s.LOCAL_MODEL_CONTEXT_LENGTH) document.getElementById('s-local-ctx').value = s.LOCAL_MODEL_CONTEXT_LENGTH;
         if (s.LOCAL_MODEL_CHAT_FORMAT) document.getElementById('s-local-chat-format').value = s.LOCAL_MODEL_CHAT_FORMAT;
+        toggleBuiltinSection();
         document.getElementById('s-local-main').checked = s.USE_LOCAL_MAIN === true || s.USE_LOCAL_MAIN === 'True';
         document.getElementById('s-local-code').checked = s.USE_LOCAL_CODE === true || s.USE_LOCAL_CODE === 'True';
         document.getElementById('s-local-light').checked = s.USE_LOCAL_LIGHT === true || s.USE_LOCAL_LIGHT === 'True';
         document.getElementById('s-local-fallback').checked = s.USE_LOCAL_FALLBACK === true || s.USE_LOCAL_FALLBACK === 'True';
     }
+
+    function toggleBuiltinSection() {
+        const url = document.getElementById('s-local-url').value.trim();
+        const section = document.getElementById('local-builtin-section');
+        const isExternal = url && !url.match(/^https?:\/\/(127\.0\.0\.1|localhost)[:/]/);
+        section.style.opacity = isExternal ? '0.4' : '1';
+        section.style.pointerEvents = isExternal ? 'none' : '';
+    }
+
+    document.getElementById('s-local-url').addEventListener('input', toggleBuiltinSection);
 
     async function loadSettings() {
         const resp = await fetch('/api/settings');
@@ -217,23 +244,29 @@ export function initSettings({ ws, state }) {
 
     let localStatusInterval = null;
     function updateLocalStatus() {
-        if (state.activePage !== 'settings') return; // Don't poll if page is hidden
+        if (state.activePage !== 'settings') return;
         fetch('/api/local-model/status').then(r => r.json()).then(d => {
             const el = document.getElementById('local-model-status');
             const isReady = d.status === 'ready';
             let text = 'Status: ' + (d.status || 'offline').charAt(0).toUpperCase() + (d.status || 'offline').slice(1);
+            if (d.external) text += ' (external)';
+            if (d.status === 'ready' && d.model_name) text += ` — ${d.model_name}`;
             if (d.status === 'ready' && d.context_length) text += ` (ctx: ${d.context_length})`;
             if (d.status === 'downloading' && d.download_progress) text += ` ${Math.round(d.download_progress * 100)}%`;
             if (d.error) text += ' \u2014 ' + d.error;
             el.textContent = text;
             el.style.color = isReady ? 'var(--green)' : d.status === 'error' ? 'var(--red)' : 'var(--text-secondary)';
-            document.getElementById('btn-local-stop').style.opacity = isReady ? '1' : '0.5';
+            if (d.status === 'ready' && !d.external && d.model_name) {
+                const nameEl = document.getElementById('s-local-model-name');
+                if (!nameEl.value.trim()) nameEl.value = d.model_name;
+            }
+            document.getElementById('btn-local-stop').style.opacity = isReady && !d.external ? '1' : '0.5';
             document.getElementById('btn-local-test').style.opacity = isReady ? '1' : '0.5';
             ['s-local-main', 's-local-code', 's-local-light', 's-local-fallback'].forEach(id => {
                 const cb = document.getElementById(id);
                 const label = cb.closest('.local-toggle');
                 if (cb.checked && !isReady) {
-                    label.title = 'Local server is not running \u2014 requests will fail until started';
+                    label.title = 'Configured model server is not running \u2014 requests will fail until started';
                     label.style.color = 'var(--amber)';
                 } else {
                     label.title = '';
@@ -260,13 +293,24 @@ export function initSettings({ ws, state }) {
             const resp = await fetch('/api/local-model/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
             const data = await resp.json();
             if (data.error) alert('Error: ' + data.error);
-            else updateLocalStatus();
+            else {
+                const port = parseInt(document.getElementById('s-local-port').value) || 8766;
+                document.getElementById('s-local-url').value = `http://127.0.0.1:${port}/v1`;
+                toggleBuiltinSection();
+                updateLocalStatus();
+            }
         } catch (e) { alert('Failed: ' + e.message); }
     });
 
     document.getElementById('btn-local-stop').addEventListener('click', async () => {
         try {
             await fetch('/api/local-model/stop', { method: 'POST' });
+            const urlEl = document.getElementById('s-local-url');
+            if (urlEl.value.match(/^https?:\/\/(127\.0\.0\.1|localhost)[:/]/)) {
+                urlEl.value = '';
+                document.getElementById('s-local-model-name').value = '';
+                toggleBuiltinSection();
+            }
             updateLocalStatus();
         } catch (e) { alert('Failed: ' + e.message); }
     });
@@ -290,6 +334,48 @@ export function initSettings({ ws, state }) {
         } catch (e) { el.textContent = 'Test failed: ' + e.message; el.style.color = 'var(--red)'; }
     });
 
+    document.getElementById('btn-cuda-setup').addEventListener('click', async () => {
+        const el = document.getElementById('cuda-status');
+        el.style.display = 'block';
+        el.textContent = 'Detecting GPU...';
+        el.style.color = 'var(--text-muted)';
+        try {
+            const gpuResp = await fetch('/api/local-model/gpu-info');
+            const gpuInfo = await gpuResp.json();
+            if (!gpuInfo.detected) {
+                el.textContent = 'No NVIDIA GPU detected. ' + (gpuInfo.message || gpuInfo.error || '');
+                el.style.color = 'var(--red)';
+                return;
+            }
+            const gpuName = gpuInfo.gpu || 'NVIDIA GPU';
+            if (!confirm(
+                `Detected: ${gpuName}\n` +
+                `Driver: ${gpuInfo.driver_version || 'unknown'}\n\n` +
+                `This will install llama-cpp-python with CUDA support (~200MB download).\n` +
+                `Continue?`
+            )) {
+                el.style.display = 'none';
+                return;
+            }
+            el.textContent = `Installing CUDA support for ${gpuName}... (this may take a few minutes)`;
+            el.style.color = 'var(--text-muted)';
+            const installResp = await fetch('/api/local-model/install-cuda', { method: 'POST' });
+            const result = await installResp.json();
+            if (result.ok) {
+                el.textContent = result.message;
+                el.style.color = 'var(--green)';
+            } else {
+                el.textContent = 'Install failed: ' + (result.error || 'Unknown error');
+                if (result.details) el.textContent += '\n' + result.details;
+                el.style.whiteSpace = 'pre-wrap';
+                el.style.color = 'var(--red)';
+            }
+        } catch (e) {
+            el.textContent = 'CUDA setup failed: ' + e.message;
+            el.style.color = 'var(--red)';
+        }
+    });
+
     document.getElementById('btn-save-settings').addEventListener('click', async () => {
         const body = {
             OUROBOROS_MODEL: document.getElementById('s-model').value,
@@ -309,6 +395,8 @@ export function initSettings({ ws, state }) {
             OUROBOROS_HARD_TIMEOUT_SEC: parseInt(document.getElementById('s-hard-timeout').value) || 1800,
             OUROBOROS_TOOL_TIMEOUT_SEC: parseInt(document.getElementById('s-tool-timeout').value) || 120,
             GITHUB_REPO: document.getElementById('s-gh-repo').value,
+            LOCAL_MODEL_URL: document.getElementById('s-local-url').value.trim(),
+            LOCAL_MODEL_NAME: document.getElementById('s-local-model-name').value.trim(),
             LOCAL_MODEL_SOURCE: document.getElementById('s-local-source').value,
             LOCAL_MODEL_FILENAME: document.getElementById('s-local-filename').value,
             LOCAL_MODEL_PORT: parseInt(document.getElementById('s-local-port').value) || 8766,

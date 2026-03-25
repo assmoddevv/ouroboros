@@ -181,6 +181,60 @@ def kill_process_on_port(port: int) -> None:
 # Embedded Python paths
 # ---------------------------------------------------------------------------
 
+def detect_nvidia_gpu() -> Optional[dict]:
+    """Detect NVIDIA GPU via nvidia-smi.
+
+    Returns dict with 'gpu', 'driver_version', 'compute_capability' or None.
+    """
+    try:
+        result = _hidden_run(
+            ["nvidia-smi", "--query-gpu=name,driver_version", "--format=csv,noheader,nounits"],
+            capture_output=True, text=True, timeout=10,
+        ) if IS_WINDOWS else subprocess.run(
+            ["nvidia-smi", "--query-gpu=name,driver_version", "--format=csv,noheader,nounits"],
+            capture_output=True, text=True, timeout=10,
+        )
+        if result.returncode != 0:
+            return None
+        line = result.stdout.strip().splitlines()[0]
+        parts = [p.strip() for p in line.split(",")]
+        gpu_name = parts[0] if parts else "Unknown"
+        driver_version = parts[1] if len(parts) > 1 else ""
+
+        cuda_result = _hidden_run(
+            ["nvidia-smi", "--query-gpu=compute_cap", "--format=csv,noheader,nounits"],
+            capture_output=True, text=True, timeout=10,
+        ) if IS_WINDOWS else subprocess.run(
+            ["nvidia-smi", "--query-gpu=compute_cap", "--format=csv,noheader,nounits"],
+            capture_output=True, text=True, timeout=10,
+        )
+        compute_cap = cuda_result.stdout.strip().splitlines()[0].strip() if cuda_result.returncode == 0 else ""
+
+        return {
+            "gpu": gpu_name,
+            "driver_version": driver_version,
+            "compute_capability": compute_cap,
+        }
+    except FileNotFoundError:
+        return None
+    except Exception as exc:
+        log.debug("nvidia-smi detection failed: %s", exc)
+        return None
+
+
+def get_embedded_python() -> Optional[pathlib.Path]:
+    """Return the path to the embedded python-standalone interpreter if it exists."""
+    if getattr(sys, "frozen", False):
+        base = pathlib.Path(sys._MEIPASS)
+    else:
+        base = pathlib.Path(__file__).resolve().parent.parent
+
+    for candidate in embedded_python_candidates(base):
+        if candidate.exists():
+            return candidate
+    return None
+
+
 def embedded_python_candidates(base_dir: pathlib.Path) -> List[pathlib.Path]:
     """Return candidate paths for the embedded python-build-standalone interpreter."""
     if IS_WINDOWS:

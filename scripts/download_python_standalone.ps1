@@ -33,10 +33,11 @@ Write-Host "=== Installing agent dependencies ==="
 & "${Dest}\python.exe" -m pip install --quiet -r requirements.txt
 
 Write-Host ""
-Write-Host "=== Installing optional: local model support ==="
+Write-Host "=== Installing optional: local model support (CPU-only) ==="
+Write-Host "NOTE: For CUDA/GPU support, use the 'Setup CUDA' button in the app's Settings page."
 try {
     & "${Dest}\python.exe" -m pip install --quiet "llama-cpp-python[server]" 2>&1
-    Write-Host "llama-cpp-python installed successfully"
+    Write-Host "llama-cpp-python (CPU) installed successfully"
 } catch {
     Write-Warning "llama-cpp-python install failed - local model support will not be available"
 }
