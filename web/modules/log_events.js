@@ -387,6 +387,165 @@ export function summarizeLogEvent(evt) {
     };
 }
 
+export function summarizeChatLiveEvent(evt) {
+    const t = evt.type || evt.event || 'unknown';
+    const progressText = shortText(String(evt.content || evt.text || '').replace(/^💬\s*/, ''), 240);
+
+    if (evt.is_progress || t === 'send_message') {
+        return {
+            phase: evt.task_id === 'bg-consciousness' ? 'thinking' : 'working',
+            headline: progressText || 'Working...',
+            body: '',
+            visible: Boolean(progressText),
+            promote: true,
+            human: true,
+            dedupeKey: progressText ? `progress:${progressText}` : `progress:${evt.task_id || ''}`,
+        };
+    }
+
+    if (t === 'task_started' || t === 'task_received') {
+        return {
+            phase: 'working',
+            headline: 'Working on it',
+            body: '',
+            visible: false,
+            promote: true,
+            human: false,
+            dedupeKey: `${t}:${getLogTaskGroupId(evt)}`,
+        };
+    }
+
+    if (t === 'context_building_started') {
+        return {
+            phase: 'working',
+            headline: 'Getting ready',
+            body: '',
+            visible: false,
+            promote: true,
+            human: false,
+            dedupeKey: `${t}:${getLogTaskGroupId(evt)}`,
+        };
+    }
+
+    if (t === 'context_building_finished') {
+        return {
+            phase: 'working',
+            headline: 'Looking through the context',
+            body: '',
+            visible: false,
+            promote: false,
+            human: false,
+            dedupeKey: `${t}:${getLogTaskGroupId(evt)}`,
+        };
+    }
+
+    if (t === 'task_heartbeat') {
+        return {
+            phase: 'working',
+            headline: 'Still working',
+            body: '',
+            visible: false,
+            promote: false,
+            human: false,
+            dedupeKey: `${t}:${getLogTaskGroupId(evt)}:${evt.phase || ''}`,
+        };
+    }
+
+    if (t === 'llm_round_started') {
+        return {
+            phase: 'thinking',
+            headline: 'Thinking',
+            body: '',
+            visible: false,
+            promote: false,
+            human: false,
+            dedupeKey: `${t}:${getLogTaskGroupId(evt)}:${evt.round || ''}:${evt.attempt || ''}`,
+        };
+    }
+
+    if (t === 'tool_call_started') {
+        return {
+            phase: 'working',
+            headline: 'Working through the next step',
+            body: '',
+            visible: false,
+            promote: false,
+            human: false,
+            dedupeKey: `${t}:${getLogTaskGroupId(evt)}:${evt.tool || ''}`,
+        };
+    }
+
+    if (t === 'llm_round_error' || t === 'llm_api_error') {
+        return {
+            phase: 'error',
+            headline: 'Ran into an issue while thinking',
+            body: shortText(evt.error, 220),
+            visible: true,
+            promote: true,
+            human: false,
+            dedupeKey: `${t}:${getLogTaskGroupId(evt)}:${evt.round || ''}`,
+        };
+    }
+
+    if (t === 'tool_call_timeout' || t === 'tool_timeout') {
+        return {
+            phase: 'error',
+            headline: 'One of the steps took too long',
+            body: '',
+            visible: true,
+            promote: true,
+            human: false,
+            dedupeKey: `${t}:${getLogTaskGroupId(evt)}:${evt.tool || ''}`,
+        };
+    }
+
+    if (t === 'tool_call_finished' && evt.is_error) {
+        return {
+            phase: 'error',
+            headline: 'One of the steps failed',
+            body: shortText(evt.result_preview || evt.error, 220),
+            visible: true,
+            promote: true,
+            human: false,
+            dedupeKey: `${t}:${getLogTaskGroupId(evt)}:${evt.tool || ''}:error`,
+        };
+    }
+
+    if (t === 'task_done') {
+        return {
+            phase: 'done',
+            headline: 'Done',
+            body: '',
+            visible: true,
+            promote: true,
+            human: false,
+            dedupeKey: `${t}:${getLogTaskGroupId(evt)}`,
+        };
+    }
+
+    if (t.includes('error') || t.includes('crash') || t.includes('fail')) {
+        return {
+            phase: 'error',
+            headline: 'Ran into an issue',
+            body: shortText(evt.error || evt.result_preview || evt.text || '', 220),
+            visible: true,
+            promote: true,
+            human: false,
+            dedupeKey: `${t}:${getLogTaskGroupId(evt)}`,
+        };
+    }
+
+    return {
+        phase: 'working',
+        headline: 'Working...',
+        body: '',
+        visible: false,
+        promote: false,
+        human: false,
+        dedupeKey: `${t}:${getLogTaskGroupId(evt)}`,
+    };
+}
+
 export function duplicateLogEventKey(evt) {
     const t = evt.type || evt.event || '';
     if (t === 'startup_verification') return `${t}:${evt.git_sha || ''}:${evt.issues_count || 0}`;

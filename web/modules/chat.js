@@ -1,10 +1,9 @@
 import { escapeHtml, renderMarkdown } from './utils.js';
 import {
-    duplicateLogEventKey,
     getLogTaskGroupId,
     isGroupedTaskEvent,
     normalizeLogTs,
-    summarizeLogEvent,
+    summarizeChatLiveEvent,
 } from './log_events.js';
 
 const CHAT_STORAGE_KEY = 'ouro_chat';
@@ -94,9 +93,17 @@ export function initChat({ ws, state, updateUnreadBadge }) {
     liveCard.innerHTML = `
         <summary>
             <div class="chat-live-summary">
-                <span class="chat-live-phase info" data-live-phase>idle</span>
-                <span class="chat-live-title" data-live-title>Waiting for work</span>
-                <span class="chat-live-count" data-live-count hidden>0 updates</span>
+                <div class="chat-live-summary-main">
+                    <span class="chat-live-phase working" data-live-phase>Working</span>
+                    <span class="chat-live-title" data-live-title>Waiting for work</span>
+                </div>
+                <div class="chat-live-summary-side">
+                    <span class="chat-live-count" data-live-count hidden>2 notes</span>
+                    <span class="chat-live-toggle" data-live-toggle>Show details</span>
+                    <svg class="chat-live-chevron" width="14" height="14" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                        <path d="M5 7.5 10 12.5 15 7.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"></path>
+                    </svg>
+                </div>
             </div>
             <div class="chat-live-meta" data-live-meta></div>
         </summary>
@@ -106,13 +113,16 @@ export function initChat({ ws, state, updateUnreadBadge }) {
     const liveCardTitle = liveCard.querySelector('[data-live-title]');
     const liveCardCount = liveCard.querySelector('[data-live-count]');
     const liveCardMeta = liveCard.querySelector('[data-live-meta]');
+    const liveCardToggle = liveCard.querySelector('[data-live-toggle]');
     const liveCardTimeline = liveCard.querySelector('[data-live-timeline]');
     const liveCardState = {
         groupId: '',
         updates: 0,
         finished: false,
         items: [],
+        lastHumanHeadline: '',
     };
+    liveCard.addEventListener('toggle', syncLiveCardToggle);
 
     function buildMessageKey(role, text, timestamp, opts = {}) {
         if (opts.clientMessageId) return `client|${opts.clientMessageId}`;
@@ -221,15 +231,18 @@ export function initChat({ ws, state, updateUnreadBadge }) {
         liveCardState.updates = 0;
         liveCardState.finished = false;
         liveCardState.items = [];
+        liveCardState.lastHumanHeadline = '';
         liveCardTitle.textContent = 'Working...';
-        liveCardPhase.textContent = 'progress';
-        liveCardPhase.className = 'chat-live-phase progress';
+        liveCardPhase.dataset.phase = 'working';
+        liveCardPhase.textContent = 'Working';
+        liveCardPhase.className = 'chat-live-phase working';
         liveCardCount.hidden = true;
-        liveCardCount.textContent = '0 updates';
+        liveCardCount.textContent = '0 notes';
         liveCardMeta.innerHTML = '';
         liveCardTimeline.innerHTML = '';
         liveCard.open = false;
         liveCard.dataset.finished = '0';
+        syncLiveCardToggle();
     }
 
     function ensureLiveCardVisible() {
@@ -241,17 +254,27 @@ export function initChat({ ws, state, updateUnreadBadge }) {
         insertMessageNode(liveCard);
     }
 
+    function formatLiveCardPhaseLabel(phase) {
+        if (phase === 'thinking') return 'Thinking';
+        if (phase === 'working') return 'Working';
+        if (phase === 'done') return 'Done';
+        if (phase === 'error' || phase === 'timeout') return 'Issue';
+        if (!phase) return 'Working';
+        return phase.charAt(0).toUpperCase() + phase.slice(1);
+    }
+
+    function syncLiveCardToggle() {
+        if (!liveCardToggle) return;
+        liveCardToggle.textContent = liveCard.open ? 'Hide details' : 'Show details';
+    }
+
     function renderLiveCardTimeline() {
         liveCardTimeline.innerHTML = liveCardState.items.map((item) => `
-            <div class="chat-live-line">
-                <div class="chat-live-line-main">
-                    <span class="chat-live-line-phase ${item.phase || 'info'}">${escapeHtml(item.phase || 'info')}</span>
+            <div class="chat-live-line ${item.phase || 'working'}">
+                <div class="chat-live-line-head">
                     <span class="chat-live-line-title">${escapeHtml(item.headline)}</span>
-                    <span class="chat-live-line-repeat" ${item.count > 1 ? '' : 'hidden'}>${item.count > 1 ? `x${item.count}` : ''}</span>
-                </div>
-                <div class="chat-live-line-meta">
-                    ${item.ts ? `<span>${escapeHtml(item.ts)}</span>` : ''}
-                    ${item.meta.map((meta) => `<span class="chat-live-pill">${escapeHtml(meta)}</span>`).join('')}
+                    <span class="chat-live-line-repeat" ${item.count > 1 ? '' : 'hidden'}>${item.count > 1 ? `${item.count}x` : ''}</span>
+                    ${item.ts ? `<span class="chat-live-line-time">${escapeHtml(item.ts)}</span>` : ''}
                 </div>
                 ${item.body ? `<div class="chat-live-line-body">${escapeHtml(item.body)}</div>` : ''}
             </div>
@@ -270,34 +293,52 @@ export function initChat({ ws, state, updateUnreadBadge }) {
         liveCardState.updates += 1;
         liveCardState.finished = ['done', 'error', 'timeout'].includes(summary.phase || '');
         liveCard.dataset.finished = liveCardState.finished ? '1' : '0';
-        liveCardPhase.textContent = summary.phase || 'info';
-        liveCardPhase.className = `chat-live-phase ${summary.phase || 'info'}`;
-        liveCardTitle.textContent = summary.headline || 'Working...';
-        liveCardCount.hidden = false;
-        liveCardCount.textContent = `${liveCardState.updates} updates`;
-        liveCardMeta.innerHTML = [
-            nextGroupId === 'bg-consciousness' ? 'background' : `task=${nextGroupId}`,
-            ts || '',
-            ...summary.meta,
-        ].filter(Boolean).map((item) => `<span class="chat-live-pill">${escapeHtml(item)}</span>`).join('');
-
-        const last = liveCardState.items[liveCardState.items.length - 1];
-        const syntheticKey = dedupeKey || `${summary.phase || 'info'}|${summary.headline || ''}|${summary.body || ''}`;
-        if (last && last.dedupeKey === syntheticKey) {
-            last.count += 1;
-            last.ts = ts || last.ts;
-        } else {
-            liveCardState.items.push({
-                phase: summary.phase || 'info',
-                headline: summary.headline || 'Update',
-                body: summary.body || '',
-                meta: summary.meta || [],
-                ts: ts || '',
-                count: 1,
-                dedupeKey: syntheticKey,
-            });
-            if (liveCardState.items.length > 20) liveCardState.items.shift();
+        const headline = summary.headline || 'Working...';
+        if (summary.human && headline) {
+            liveCardState.lastHumanHeadline = headline;
         }
+
+        const shouldPromote =
+            Boolean(summary.promote)
+            || !liveCardState.lastHumanHeadline
+            || liveCardState.finished;
+        const activeHeadline = shouldPromote
+            ? headline
+            : (liveCardState.lastHumanHeadline || headline);
+        const activePhase = liveCardState.finished
+            ? (summary.phase || 'done')
+            : (shouldPromote ? (summary.phase || 'working') : (liveCardPhase.dataset.phase || 'working'));
+
+        liveCardPhase.dataset.phase = activePhase;
+        liveCardPhase.textContent = formatLiveCardPhaseLabel(activePhase);
+        liveCardPhase.className = `chat-live-phase ${activePhase}`;
+        liveCardTitle.textContent = activeHeadline;
+
+        const syntheticKey = summary.dedupeKey || dedupeKey || `${summary.phase || 'working'}|${headline}|${summary.body || ''}`;
+        const shouldRenderLine = summary.visible !== false && Boolean(headline || summary.body);
+        if (shouldRenderLine) {
+            const last = liveCardState.items[liveCardState.items.length - 1];
+            if (last && last.dedupeKey === syntheticKey) {
+                last.count += 1;
+                last.ts = ts || last.ts;
+            } else {
+                liveCardState.items.push({
+                    phase: summary.phase || 'working',
+                    headline: headline || 'Update',
+                    body: summary.body || '',
+                    ts: ts || '',
+                    count: 1,
+                    dedupeKey: syntheticKey,
+                });
+                if (liveCardState.items.length > 20) liveCardState.items.shift();
+            }
+        }
+        liveCardCount.hidden = liveCardState.items.length < 2;
+        liveCardCount.textContent = `${liveCardState.items.length} notes`;
+        liveCardMeta.innerHTML = [
+            nextGroupId === 'bg-consciousness' ? 'Background thinking' : '',
+            ts ? `Latest ${ts}` : '',
+        ].filter(Boolean).map((item) => `<span class="chat-live-meta-text">${escapeHtml(item)}</span>`).join('');
         renderLiveCardTimeline();
         insertMessageNode(liveCard);
         hideTypingIndicatorOnly();
@@ -309,32 +350,31 @@ export function initChat({ ws, state, updateUnreadBadge }) {
     }
 
     function updateLiveCardFromProgressMessage(msg) {
-        const content = String(msg?.content || '').replace(/^💬\s*/, '').trim();
-        if (!content) return;
+        const summary = summarizeChatLiveEvent({
+            type: 'send_message',
+            is_progress: true,
+            content: msg?.content || '',
+            text: msg?.content || '',
+            task_id: liveCardState.groupId || 'chat',
+        });
+        if (!summary) return;
         applyLiveCardState(
-            {
-                phase: 'progress',
-                headline: content,
-                body: '',
-                meta: ['thought'],
-            },
+            summary,
             liveCardState.groupId || 'chat',
             normalizeLogTs(msg.ts || new Date().toISOString()),
-            `progress:${content}`,
+            summary.dedupeKey || '',
         );
     }
 
     function updateLiveCardFromLogEvent(evt) {
         if (!evt || !isGroupedTaskEvent(evt)) return;
-        const summary = summarizeLogEvent(evt);
-        const dedupeKey = evt.type === 'send_message'
-            ? `progress:${summary.headline || ''}`
-            : (duplicateLogEventKey(evt) || `${evt.type || evt.event || 'event'}|${summary.phase || ''}|${summary.headline || ''}`);
+        const summary = summarizeChatLiveEvent(evt);
+        if (!summary) return;
         applyLiveCardState(
             summary,
             getLogTaskGroupId(evt) || liveCardState.groupId || 'active',
             normalizeLogTs(evt.ts || evt.timestamp),
-            dedupeKey,
+            summary.dedupeKey || '',
         );
     }
 
@@ -621,8 +661,9 @@ export function initChat({ ws, state, updateUnreadBadge }) {
             if (liveCardState.groupId && !liveCardState.finished) {
                 liveCardState.finished = true;
                 liveCard.dataset.finished = '1';
-                if (liveCardPhase.textContent === 'progress' || liveCardPhase.textContent === 'calling') {
-                    liveCardPhase.textContent = 'done';
+                if (['working', 'thinking'].includes(liveCardPhase.dataset.phase || '')) {
+                    liveCardPhase.dataset.phase = 'done';
+                    liveCardPhase.textContent = 'Done';
                     liveCardPhase.className = 'chat-live-phase done';
                 }
             }

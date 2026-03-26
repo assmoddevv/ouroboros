@@ -14,6 +14,8 @@ def test_chat_progress_updates_route_into_live_card():
     source = _read("web/modules/chat.js")
 
     assert "liveCard.id = 'chat-live-card';" in source
+    assert "summarizeChatLiveEvent" in source
+    assert "Show details" in source
     assert "if (msg.is_progress) {" in source
     assert "updateLiveCardFromProgressMessage(msg);" in source
     assert "ws.on('log', (msg) => {" in source
@@ -32,6 +34,7 @@ def test_logs_use_shared_log_event_helpers_and_group_task_cards():
     assert "createTaskGroupCard" in logs_source
     assert "renderTaskTimeline" in logs_source
     assert "export function summarizeLogEvent" in shared_source
+    assert "export function summarizeChatLiveEvent" in shared_source
     assert "export function isGroupedTaskEvent" in shared_source
     assert "export function getLogTaskGroupId" in shared_source
 
@@ -45,6 +48,8 @@ def test_styles_cover_chat_header_controls_and_grouped_cards():
     assert ".chat-live-card {" in css
     assert '.chat-live-card[data-finished="1"] {' in css
     assert ".chat-live-timeline {" in css
+    assert ".chat-live-toggle {" in css
+    assert ".chat-live-card[open] .chat-live-chevron {" in css
     assert ".log-task-card {" in css
     assert ".log-task-timeline {" in css
 
